@@ -39,6 +39,10 @@ Python for you (no admin rights needed).
 `http://<your-mac-ip>:8765` address in Safari on an iPad on the same Wi-Fi.
 Pencil pressure is used for line width, and palm rejection is on.
 
+**Or as an app on your iPhone or iPad:** `~/Desktop/HandwritingMagic-iOS` is an
+Xcode project that runs this same page with the whole pipeline on the device
+(Qwen3-VL-2B via MLX, no Mac needed). See its README.
+
 ### Controls
 
 | | |

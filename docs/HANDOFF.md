@@ -118,7 +118,10 @@ model the iPhone/iPad app runs). Moving macOS Vision's hint BEFORE the
 instructions stopped the model echoing it (reads went from 2.3 s to 1 s), and
 2B now matches 4B: 10/12 and 9/12 intended sentences, 1.8 s a line. The 13
 styles have names ("Clean print" ... "Flowing cursive") instead of numbers.
-The iOS app is a separate project, `~/Desktop/HandwritingMagic-iOS`.
+The iOS app is a separate project, `~/Desktop/HandwritingMagic-iOS`: this
+page in a web view, with the pipeline ported to Swift (MLX for the reader).
+The page now fits a phone (the toolbar wraps, safe areas) and says "finger
+or Apple Pencil" on touchscreens; `scripts/sync_web.sh` there copies web/ in.
 
 **Still open**
 - Reading is the weak link on very messy words ("hanwak" -> "hamster").

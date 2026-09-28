@@ -11,7 +11,8 @@ let W = 0, H = 0, DPR = 1;
 const INK = "#1c2230";
 const IMP = ["#4dc7ff", "#007aff", "#5759f5"];
 const BASE_W = 2.7;
-const RULE_GAP = 72, RULE_TOP = 150;
+const RULE_GAP = 72;
+let ruleTop = 150;      // first ruled line: below the toolbar, which wraps onto two rows on a phone
 
 const settings = {
   mode: "magic",        // magic | tidy | off
@@ -47,6 +48,7 @@ function resize() {
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ruleTop = Math.max(150, Math.round($("toolbar").getBoundingClientRect().bottom + 56));
   requestRender();
 }
 window.addEventListener("resize", resize);
@@ -83,7 +85,7 @@ function drawPaper() {
   ctx.strokeStyle = "rgba(60,110,200,0.10)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let y = RULE_TOP; y < H; y += RULE_GAP) { ctx.moveTo(0, y + 0.5); ctx.lineTo(W, y + 0.5); }
+  for (let y = ruleTop; y < H; y += RULE_GAP) { ctx.moveTo(0, y + 0.5); ctx.lineTo(W, y + 0.5); }
   ctx.stroke();
 }
 
@@ -512,5 +514,8 @@ window.__hw = {
   get busy() { return paths.some((p) => p.state === "busy") || tweens.length > 0; },
 };
 
+if (matchMedia("(pointer: coarse)").matches) {
+  $("hint").textContent = "Write something with your finger or an Apple Pencil. Pause, and watch.";
+}
 resize();
 pollStatus();
