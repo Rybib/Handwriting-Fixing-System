@@ -45,11 +45,67 @@ WEB_DIR = os.path.join(HERE, "..", "web")
 FALLBACK_STYLE = 9
 WORK_LOCK = threading.Lock()
 
-STATE = {"synth": None, "reader": None, "reader_desc": None, "reader_error": None, "loading": True}
+STATE = {"synth": None, "reader": None, "reader_desc": None, "reader_error": None, "loading": True,
+         "phase": "Starting", "dl": None}
+
+
+def reader_model_id():
+    return os.environ.get("HWFIX_VLM", "Qwen/Qwen3-VL-2B-Instruct")
+
+
+def _dir_bytes(path):
+    total = 0
+    for root, _, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
+
+
+def download_reader(model_id):
+    """Fetch the reader's files up front so the page can show real progress."""
+    from huggingface_hub import HfApi, snapshot_download
+    from huggingface_hub.constants import HF_HUB_CACHE
+
+    cache_dir = os.path.join(HF_HUB_CACHE, "models--" + model_id.replace("/", "--"))
+    dl = {"dir": cache_dir, "total": 4.3e9, "last": -1, "last_t": time.time(), "stalled": False}
+    try:
+        info = HfApi().model_info(model_id, files_metadata=True)
+        dl["total"] = float(sum((f.size or 0) for f in info.siblings)) or dl["total"]
+    except Exception as e:  # noqa: BLE001  (offline: fine if it is already cached)
+        print(f"[models] could not query model size ({e})")
+    STATE["dl"] = dl
+    STATE["phase"] = "Downloading the handwriting reader"
+    print(f"[models] downloading {model_id} ({dl['total'] / 1e9:.1f} GB) to {cache_dir}")
+    try:
+        snapshot_download(model_id)
+    except Exception as e:  # noqa: BLE001
+        print(f"[models] download problem ({e}); trying whatever is cached")
+    STATE["dl"] = None
+
+
+def status_phase():
+    """Human-readable loading phase, with download progress and stall detection."""
+    dl = STATE["dl"]
+    if not dl:
+        return STATE["phase"], None
+    have = _dir_bytes(dl["dir"])
+    now = time.time()
+    if have != dl["last"]:
+        dl["last"], dl["last_t"] = have, now
+    stalled = now - dl["last_t"] > 90
+    frac = min(0.999, have / dl["total"]) if dl["total"] else None
+    text = f"{STATE['phase']}: {have / 1e9:.1f} of {dl['total'] / 1e9:.1f} GB"
+    if stalled:
+        text += " (no progress for a while - check your internet / the Terminal window)"
+    return text, frac
 
 
 def load_models(reader_kind):
     try:
+        STATE["phase"] = "Getting the handwriting synthesiser"
         STATE["synth"] = HandwritingSynth(ensure_weights(), STYLES_DIR)
         print("[models] handwriting synthesis ready")
     except Exception as e:  # noqa: BLE001
@@ -57,17 +113,24 @@ def load_models(reader_kind):
         STATE["reader_error"] = f"synthesis model failed: {e}"
     if reader_kind != "none":
         try:
-            print(f"[models] loading reader '{reader_kind}' (first run downloads ~4 GB) ...")
+            download_reader(reader_model_id())
+            STATE["phase"] = "Loading the handwriting reader into memory"
+            print(f"[models] loading reader '{reader_kind}' ...")
             t = time.time()
-            STATE["reader"], STATE["reader_desc"] = build_reader(reader_kind)
-            print(f"[models] reader ready: {STATE['reader_desc']} ({time.time() - t:.0f}s)")
-            # warm up so the first real request is fast
+            STATE["reader"], desc = build_reader(reader_kind)
+            print(f"[models] reader loaded: {desc} ({time.time() - t:.0f}s)")
+            STATE["phase"] = "Warming up the handwriting reader"
             from PIL import Image
+            t = time.time()
             STATE["reader"].read(Image.new("RGB", (64, 32), "white"))
+            print(f"[models] warm-up read took {time.time() - t:.1f}s")
+            STATE["reader_desc"] = desc
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
+            STATE["reader"] = None
             STATE["reader_error"] = f"{type(e).__name__}: {e}"
     STATE["loading"] = False
+    STATE["phase"] = "Ready"
     print("[models] all loaded - go write something!")
 
 
@@ -201,8 +264,11 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/api/status"):
+            phase, progress = status_phase() if STATE["loading"] else (STATE["phase"], None)
             return self._json(200, {
                 "loading": STATE["loading"],
+                "phase": phase,
+                "progress": progress,
                 "synth": STATE["synth"] is not None,
                 "reader": STATE["reader_desc"],
                 "error": STATE["reader_error"],

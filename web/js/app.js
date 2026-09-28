@@ -468,17 +468,22 @@ window.addEventListener("keydown", (e) => {
 window.addEventListener("keyup", (e) => { if (e.code === "Space") setCompare(false); });
 
 async function pollStatus() {
+  let reachable = true;
   try {
     const r = await fetch("/api/status");
     serverInfo = await r.json();
-  } catch { serverInfo = { loading: false, error: "server not reachable" }; }
+  } catch {
+    reachable = false;
+    serverInfo = { loading: false, error: "the demo server isn't running (start it again with the launcher)" };
+  }
   const st = $("status");
   st.classList.toggle("ready", !serverInfo.loading && !!serverInfo.reader);
   st.classList.toggle("error", !serverInfo.loading && !serverInfo.reader);
-  $("statusText").textContent = serverInfo.loading ? "Loading models… (Tidy works already)"
+  const pct = serverInfo.progress != null ? ` (${Math.round(serverInfo.progress * 100)}%)` : "";
+  $("statusText").textContent = serverInfo.loading ? `${serverInfo.phase || "Loading models"}…${pct} · Tidy works already`
     : serverInfo.reader ? `Ready · ${serverInfo.reader}`
     : serverInfo.error ? `Magic unavailable: ${serverInfo.error}` : "Reader off (--reader none) · Tidy only";
-  if (serverInfo.loading) setTimeout(pollStatus, 1500);
+  if (serverInfo.loading || !reachable) setTimeout(pollStatus, reachable ? 1500 : 3000);
 }
 
 // hooks for automated tests

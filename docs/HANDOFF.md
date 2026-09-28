@@ -30,7 +30,9 @@ server falls back to built-in style 9. The browser then plays the animation.
 ## Current status (reported by the user)
 1. The first run hit "Address already in use" on port 8765, from another
    program. Fixed: the server now tries the next free port.
-2. The page's status pill stays amber on **"Loading models…"**. Magic mode
+2. The page's status pill stayed amber on **"Loading models…"**. (Since then
+   the pill shows the real phase: download progress in GB and %, "Loading…
+   into memory", "Warming up", and a warning if the download stalls for 90 s.) Magic mode
    silently falls back to Tidy while it is loading, which is why the output was
    "not as clean" as expected. Find out why the reader isn't becoming ready:
    - Is the download still going or stalled? Check the Terminal output and
