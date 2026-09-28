@@ -4,6 +4,9 @@ Built in a cloud Claude session, which had no Apple Silicon Mac to test on.
 This is the first time it runs on real hardware. The job is to get it working
 well there.
 
+**Update, 28 Sep 2026:** a local Mac session did this. See "Results of the local
+Mac session" at the end.
+
 ## What it is
 A local web demo. You handwrite with a mouse, trackpad or Apple Pencil, pause,
 and the ink is read, its spelling fixed, and it is rewritten neatly in the
@@ -72,3 +75,49 @@ server falls back to built-in style 9. The browser then plays the animation.
    because it was written on Linux.
 
 Report back what you found, what you changed, and before/after screenshots.
+
+## Results of the local Mac session (28 Sep 2026, M5 MacBook Pro, 32 GB)
+
+**Why the status stayed on "Loading models".** Nothing hung. The first run
+downloaded the 4.3 GB reader for about 6 minutes, and nothing showed it:
+huggingface_hub hides its byte progress bars when stderr is not a terminal, and
+`run.sh` pipes everything through `tee`. `print()` was also block-buffered on
+that pipe, so `logs/last-run.log` stopped at "Loading weights" even after the
+reader was ready. A cold load from the cache takes 5-10 s on MPS in bfloat16;
+there's no GPU problem. Fixed: `snapshot_download` gets a tqdm class that
+counts bytes, which feeds the page and a Terminal line every 5 s; stdout is
+line-buffered. Also, huggingface_hub 1.x keeps finished blobs in a shared
+`hub/blobs/` store, so `du` on the model folder shows only ~11 MB.
+
+**What changed for cleaner output** (each measured with `tests/eval_pipeline.py`):
+- Stray marks: after priming, the RNN often finished the *prime* first (dotting
+  its last i). Strokes drawn before the attention reaches the text are dropped.
+- "fasl" for "fast": generation stopped before the last t was crossed. The text
+  now gets a trailing space; strokes after it are kept only if they go back
+  over the words (`_trim` in `synth.py`).
+- Candidates: 8 per style (0.6 s on the M5). macOS Vision proofreads them
+  (40 ms each, strict; the VLM read *through* glitches). The first candidate
+  that reads back perfectly in the user's style wins, else the clean style's
+  best (`pick` in `app.py`).
+- Reader: Qwen3-VL-4B by default with 16 GB+ of RAM (11/12 vs 7/12 on the eval
+  ink). macOS Vision's literal reading goes into the prompt as a second opinion;
+  it lifts 2B from 14 to 18 of 24 lines and is neutral for 4B.
+- Neatness default 90 (was 60). Higher bias makes the clean styles more legible
+  (Style 10: 4.0% -> 2.8% CER); it makes no difference to copies of the user's
+  style, whose limit is the ink being copied.
+- A bug that split one line in two: an i-dot started its own line and pulled in
+  the next tall letters, so half the rewrite was drawn on top of the other half.
+  Fixed in `groupLines`.
+- Size: the rewrite's x-height came from a per-word estimate that was often off
+  by a third. It is now the geometric mean of the line's x-height and its width
+  per letter / 1.25.
+- `--reader apple` works: 0.7 s a line, 15-17/24, below 4B's 19/24.
+
+**Still open**
+- Reading is the weak link on very messy words ("hanwak" -> "hamster").
+  Candidates: Gemma 3 4B for the MEANT step (as in the iPad app), or asking the
+  reader for several MEANT options and letting the user tap one.
+- Proofreading uses macOS Vision, so on Linux it falls back to the VLM (slow,
+  lenient, top 2 only).
+- The user's own style copies their letter shapes, including loopy ones, as
+  long as they read correctly.

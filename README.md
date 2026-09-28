@@ -26,8 +26,11 @@ from scratch. If the AI packages can't be installed, it still starts, in
 Tidy-only mode.
 
 The first run sets up a Python environment, installs PyTorch and Transformers
-(about 1 GB), then downloads the models (about 4.5 GB for the handwriting reader
-and 43 MB for the handwriting synthesiser). After that, `./run.sh` opens the demo
+(about 1 GB), then downloads the models: the handwriting reader (Qwen3-VL-4B,
+about 9 GB, on Macs with 16 GB of RAM or more; Qwen3-VL-2B, about 4.5 GB,
+otherwise) and the 43 MB handwriting synthesiser. The Terminal and the status in
+the bottom-right corner of the page show the download's progress; the page
+works in Tidy mode meanwhile. After that, `./run.sh` opens the demo
 in your browser within a few seconds, normally at `http://127.0.0.1:8765`. If
 another program is using that port, it takes the next free one. It needs Python 3.10 or newer. If it
 can't find one, it installs [uv](https://docs.astral.sh/uv/), which fetches
@@ -45,7 +48,7 @@ Pencil pressure is used for line width, and palm rejection is on.
 | **Tidy** | Keeps your exact letters. It straightens the baseline and evens out letter size, slant and word spacing. This is instant and needs no AI model |
 | **Off** | Plain ink, smoothed live by the Ink Stroke Modeler |
 | **Neatness** | How strongly the ink is regularised (the synthesiser's sampling bias, or how hard Tidy corrects) |
-| **Style** | *My handwriting* copies your style. *Style 1-13* are other writers from the training data |
+| **Style** | *My handwriting* copies your style, and switches to a clean style (Style 10) for any line where the copy reads worse; the card under the page says so. *Style 1-13* are other writers from the training data |
 | **Fix spelling** | Off: Magic rewrites exactly what you wrote, just neater |
 | **👁 / hold Space** | Shows what you originally wrote |
 | **↶ / ⌘Z** | Undoes the last stroke or the last fix |
@@ -63,16 +66,18 @@ Pencil pressure is used for line width, and palm rejection is on.
  ② Line + word segmentation, Tidy        pure geometry, instant
         │                                (Tidy mode stops here and morphs the ink)
         ▼
- ③ Reader: Qwen3-VL-2B (local)           one pass returns
+ ③ Reader: Qwen3-VL-4B (local)           one pass returns (with macOS Vision's literal
+        │                                reading as a second opinion)
         │                                  WRITTEN: "I recieve my freind at the park"
         │                                  MEANT:   "I receive my friend at the park"
         ▼
  ④ Handwriting synthesis (Graves RNN)    primed with YOUR tidied ink + its transcript,
-        │                                writes MEANT in your style; 3 candidates, best kept
+        │                                writes MEANT in your style, and in a clean
+        │                                built-in style: 8 candidates of each
         ▼
- ⑤ Self-check                            attention alignment + the reader proofreads the
-        │                                result; if your ink was too messy to copy,
-        │                                falls back to a clean built-in style
+ ⑤ Self-check                            macOS Vision proofreads the candidates; the
+        │                                first one that reads back perfectly in your
+        │                                style wins, else the clean style's best
         ▼
  ⑥ Magic animation                       scrawl dissolves, neat ink writes itself in
 ```
@@ -94,10 +99,18 @@ Pencil pressure is used for line width, and palm rejection is on.
   strokes and their transcript through the network, then continues writing in
   that style.
 * **⑤ Self-check.** Priming copies whatever it is shown, and that includes
-  illegibility. The server measures whether the network's attention lined up with
-  your ink, and has the reader proofread the result. If the result reads worse
-  than a clean built-in style, the built-in style is used. Both versions are
-  generated in the same batch, so the fallback adds almost no time.
+  illegibility. The server checks that the network's attention lined up with
+  your ink, then has macOS Vision read the candidates back literally (about 40 ms
+  each; the VLM was too forgiving, because it reads *through* a garbled letter).
+  Your style is kept only if one of its versions reads back at least as well as
+  the clean built-in style. Both are generated in the same batch, so this adds
+  well under a second. Without macOS Vision, the VLM proofreads the top two.
+* **Clean-up of the pen's path.** Right after priming, the network sometimes
+  finishes *your* sample first (it dots your last i), which used to leave a stray
+  mark before the first word; those strokes are dropped. The text also gets a
+  trailing space, so the pen has its usual end-of-word moment to cross the last t
+  (it used to write "fasl" for "fast"), and anything it writes after that, beyond
+  the last word, is dropped.
 
 ## What I researched, and why this stack
 
@@ -110,23 +123,35 @@ Pencil pressure is used for line width, and palm rejection is on.
 | **Graves RNN synthesis** | ✅ Used. It's tiny (3.6M parameters, 14 MB) and fast on CPU, supports style priming, and runs easily in Core ML |
 | **DiffInk** (ICLR 2026) and other diffusion ink models | Better style fidelity in the papers, but trained on Chinese only. Worth watching |
 | **TrOCR** | Older OCR model. It has tokenizer breakage on current Transformers, and a VLM beats it on messy lines |
-| **Qwen3-VL-2B / 4B** | ✅ 2B is the default. Set `HWFIX_VLM=Qwen/Qwen3-VL-4B-Instruct` to try 4B if your Mac has 16 GB+ RAM |
+| **Qwen3-VL-2B / 4B** | ✅ 4B is the default with 16 GB+ of RAM, 2B otherwise. Set `HWFIX_VLM=Qwen/Qwen3-VL-2B-Instruct` (or 4B) to choose |
+| **macOS Vision** (`VNRecognizeTextRequest`) | ✅ Proofreads the rewrites and gives the VLM a second opinion (it lifted 2B from 14 to 18 of 24 lines). `--reader apple` uses it as the reader, with the VLM fixing the text: fastest (0.7 s a line) but less accurate (15-17/24) |
 
-### Measured results (12 deliberately messy test lines: sloppy writing + mouse wobble + dyslexic misspellings)
+### Measured results on an M5 MacBook Pro (32 GB)
 
-* **Reader:** got the intended sentence exactly right on **8/12**. Two of the four
-  misses were deliberately near-illegible scribbles.
-* **Rewrite legibility:** each rewritten line was read back by the VLM. **9/12**
-  came back perfectly, when primed with the user's own messy ink. The failures
-  were the illegible inputs, which the self-check now catches, plus one dropped
-  letter.
-* **Speed** on the 4-core cloud CPU I built this on: about 9 s to read, about 5 s
-  to synthesise, and about 4 s to verify, per line. Your Mac's GPU should be a
-  good deal faster, but I couldn't measure that here. Tidy mode is instant.
+12 deliberately messy test lines (sloppy writing + mouse wobble + dyslexic
+misspellings, `tests/make_evalset.py`), each rewritten twice through the whole
+pipeline with `tests/eval_pipeline.py`, and read back by Qwen3-VL-4B. "Browser"
+is the same ink drawn through the page with an emulated mouse, which is harder
+to read.
+
+| | original version | now |
+|---|---|---|
+| Reader got the intended sentence (eval ink / browser ink) | 7/12 / 7/12 | **11/12 / 8/12** |
+| Rewrite reads back exactly as intended (eval / browser) | 54% / 58% | **92% / 67%** |
+| Lines kept in the writer's own style (eval ink) | 62% | **83%** |
+| Time per line (read + write + proofread) | 2.0 s | 2.7 s |
+
+![before and after on a Mac](docs/mac-eval-before-after.png)
+
+The remaining misses are the reader's: a near-illegible scribble ("thank
+youreverywhere"), and on the browser ink "homwork" (drawn as "hanwak") read as
+"hamster", "freind" as "fries". Loading takes about 10 s from the cache; Tidy
+mode is instant.
 
 Benchmarks and test tooling are in `tests/`: `make_evalset.py`,
-`eval_legibility.py`, and `e2e_playwright.py`, which drives the real UI with an
-emulated mouse. The quick checks run in a few seconds:
+`eval_pipeline.py` (the numbers above), `eval_legibility.py`, and
+`e2e_playwright.py`, which drives the real UI with an emulated mouse. The quick
+checks run in a few seconds:
 
 ```bash
 node tests/test_tidy.mjs
@@ -139,9 +164,11 @@ node tests/test_tidy.mjs
   those are written lowercase.
 * The synthesiser still sometimes wobbles on a letter. The best-of-3 selection
   and the self-check reduce this, but don't remove it.
-* The 2B reader occasionally "fixes" a word into the wrong word. The 4B model is
-  better at this, and in the real app, Gemma 3 4B (already bundled) could do this
-  step.
+* Reading is the weakest link. The reader occasionally "fixes" a word into the
+  wrong real word ("hamster" for a scrawled "homework"). 4B does this less than
+  2B; in the real app, Gemma 3 4B (already bundled) could do this step.
+* *My handwriting* faithfully copies how you shape letters, so a loopy "it will"
+  stays loopy as long as it still reads correctly.
 * Drawings and diagrams aren't detected. If the reader can't find any letters,
   the ink is left alone.
 
