@@ -1,7 +1,7 @@
 """Reading the handwriting, and working out what the writer meant.
 
 Readers (pick with --reader):
-  vlm    Qwen3-VL (4B with 16 GB+ of RAM, else 2B; HWFIX_VLM overrides). One pass reads the ink
+  vlm    Qwen3-VL (default 2B; HWFIX_VLM overrides). One pass reads the ink
          literally AND infers the intended, correctly spelled sentence, using
          both the pixels and language context. Runs on-device (Apple Silicon
          GPU via MPS, or CPU).
@@ -26,10 +26,11 @@ PROMPT = (
     "your/you're) from context. Keep the same words in the same order; do not add or remove words>"
 )
 
-# A literal OCR reading (macOS Vision) as a second opinion. On messy lines drawn
-# in the browser it took Qwen3-VL-2B from 14 to 18 of 24 intended sentences
-# right; 4B was unchanged at 19 (tests/make_evalset.py, raw and browser ink).
-OCR_HINT = "\nA separate OCR engine read the line as: \"{ocr}\". It is often wrong about single letters, so trust the image."
+# A literal OCR reading (macOS Vision) as a second opinion, put BEFORE the
+# instructions: after them, the model echoed it back and took 2.3 s instead of
+# 1 s. It took Qwen3-VL-2B from 14 to 19 of the 24 eval lines (raw and browser
+# ink from tests/make_evalset.py); 4B was unchanged at 19.
+OCR_HINT = "An OCR engine read this line as \"{ocr}\", but it is often wrong about single letters, so trust the image.\n"
 
 LITERAL_PROMPT = "Transcribe this handwriting exactly, letter by letter. Reply with only the text."
 
@@ -61,16 +62,10 @@ def _parse(reply):
 
 
 def default_vlm():
-    """Qwen3-VL-4B reads messy handwriting better than 2B (the intended sentence
-    on 11 vs 7 of the 12 tests/make_evalset.py lines, 8 vs 7 when drawn in the
-    browser) but needs ~9 GB, so it is the default only with 16 GB+ of RAM."""
-    if os.environ.get("HWFIX_VLM"):
-        return os.environ["HWFIX_VLM"]
-    try:
-        ram = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-    except (AttributeError, ValueError, OSError):
-        ram = 0
-    return "Qwen/Qwen3-VL-4B-Instruct" if ram >= 15.5e9 else "Qwen/Qwen3-VL-2B-Instruct"
+    """Qwen3-VL-2B: the same model the iPhone/iPad app runs. With macOS Vision's
+    second opinion it reads as well as 4B (19 of the 24 eval lines each) at
+    half the size and time. HWFIX_VLM=Qwen/Qwen3-VL-4B-Instruct for 4B."""
+    return os.environ.get("HWFIX_VLM") or "Qwen/Qwen3-VL-2B-Instruct"
 
 
 class VLMReader:
@@ -116,7 +111,7 @@ class VLMReader:
 
     def read(self, image):
         ocr = self.ocr(image) if self.ocr else ""
-        prompt = PROMPT + (OCR_HINT.format(ocr=ocr) if ocr else "")
+        prompt = (OCR_HINT.format(ocr=ocr) if ocr else "") + PROMPT
         return _parse(self._generate([{"type": "image", "image": image}, {"type": "text", "text": prompt}]))
 
     def read_literal(self, image):

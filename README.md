@@ -26,9 +26,8 @@ from scratch. If the AI packages can't be installed, it still starts, in
 Tidy-only mode.
 
 The first run sets up a Python environment, installs PyTorch and Transformers
-(about 1 GB), then downloads the models: the handwriting reader (Qwen3-VL-4B,
-about 9 GB, on Macs with 16 GB of RAM or more; Qwen3-VL-2B, about 4.5 GB,
-otherwise) and the 43 MB handwriting synthesiser. The Terminal and the status in
+(about 1 GB), then downloads the models: the handwriting reader (Qwen3-VL-2B,
+about 4.5 GB) and the 43 MB handwriting synthesiser. The Terminal and the status in
 the bottom-right corner of the page show the download's progress; the page
 works in Tidy mode meanwhile. After that, `./run.sh` opens the demo
 in your browser within a few seconds, normally at `http://127.0.0.1:8765`. If
@@ -48,7 +47,7 @@ Pencil pressure is used for line width, and palm rejection is on.
 | **Tidy** | Keeps your exact letters. It straightens the baseline and evens out letter size, slant and word spacing. This is instant and needs no AI model |
 | **Off** | Plain ink, smoothed live by the Ink Stroke Modeler |
 | **Neatness** | How strongly the ink is regularised (the synthesiser's sampling bias, or how hard Tidy corrects) |
-| **Style** | *My handwriting* copies your style, and switches to a clean style (Style 10) for any line where the copy reads worse; the card under the page says so. *Style 1-13* are other writers from the training data |
+| **Style** | *My handwriting* copies your style, and switches to *Tall narrow print* for any line where the copy reads worse; the card under the page says so. The 13 named styles, from *Clean print* to *Flowing cursive*, are other writers from the training data |
 | **Fix spelling** | Off: Magic rewrites exactly what you wrote, just neater |
 | **👁 / hold Space** | Shows what you originally wrote |
 | **↶ / ⌘Z** | Undoes the last stroke or the last fix |
@@ -66,7 +65,7 @@ Pencil pressure is used for line width, and palm rejection is on.
  ② Line + word segmentation, Tidy        pure geometry, instant
         │                                (Tidy mode stops here and morphs the ink)
         ▼
- ③ Reader: Qwen3-VL-4B (local)           one pass returns (with macOS Vision's literal
+ ③ Reader: Qwen3-VL-2B (local)           one pass returns (with macOS Vision's literal
         │                                reading as a second opinion)
         │                                  WRITTEN: "I recieve my freind at the park"
         │                                  MEANT:   "I receive my friend at the park"
@@ -123,8 +122,8 @@ Pencil pressure is used for line width, and palm rejection is on.
 | **Graves RNN synthesis** | ✅ Used. It's tiny (3.6M parameters, 14 MB) and fast on CPU, supports style priming, and runs easily in Core ML |
 | **DiffInk** (ICLR 2026) and other diffusion ink models | Better style fidelity in the papers, but trained on Chinese only. Worth watching |
 | **TrOCR** | Older OCR model. It has tokenizer breakage on current Transformers, and a VLM beats it on messy lines |
-| **Qwen3-VL-2B / 4B** | ✅ 4B is the default with 16 GB+ of RAM, 2B otherwise. Set `HWFIX_VLM=Qwen/Qwen3-VL-2B-Instruct` (or 4B) to choose |
-| **macOS Vision** (`VNRecognizeTextRequest`) | ✅ Proofreads the rewrites and gives the VLM a second opinion (it lifted 2B from 14 to 18 of 24 lines). `--reader apple` uses it as the reader, with the VLM fixing the text: fastest (0.7 s a line) but less accurate (15-17/24) |
+| **Qwen3-VL-2B / 4B** | ✅ 2B is the default: with macOS Vision's second opinion it reads as well as 4B (19 of 24 lines each) at half the size and time. `HWFIX_VLM=Qwen/Qwen3-VL-4B-Instruct` for 4B. The iPhone/iPad app runs the same 2B model (4-bit MLX, 1.8 GB), which reads just as well (18-19/24) |
+| **macOS Vision** (`VNRecognizeTextRequest`) | ✅ Proofreads the rewrites and gives the VLM a second opinion (it lifted 2B from 14 to 19 of 24 lines). `--reader apple` uses it as the reader, with the VLM fixing the text: fastest (0.7 s a line) but less accurate (15-17/24) |
 
 ### Measured results on an M5 MacBook Pro (32 GB)
 
@@ -136,16 +135,18 @@ to read.
 
 | | original version | now |
 |---|---|---|
-| Reader got the intended sentence (eval ink / browser ink) | 7/12 / 7/12 | **11/12 / 8/12** |
-| Rewrite reads back exactly as intended (eval / browser) | 54% / 58% | **92% / 67%** |
-| Lines kept in the writer's own style (eval ink) | 62% | **83%** |
-| Time per line (read + write + proofread) | 2.0 s | 2.7 s |
+| Reader got the intended sentence (eval ink / browser ink) | 7/12 / 7/12 | **10/12 / 9/12** |
+| Rewrite reads back exactly as intended (eval / browser) | 54% / 58% | **83% / 75%** |
+| Lines kept in the writer's own style (eval ink) | 62% | **88%** |
+| Time per line (read + write + proofread) | 2.0 s | 1.8 s |
+
+Both use Qwen3-VL-2B. (Qwen3-VL-4B got 11/12 and 8/12, at 2.7 s a line.)
 
 ![before and after on a Mac](docs/mac-eval-before-after.png)
 
 The remaining misses are the reader's: a near-illegible scribble ("thank
-youreverywhere"), and on the browser ink "homwork" (drawn as "hanwak") read as
-"hamster", "freind" as "fries". Loading takes about 10 s from the cache; Tidy
+youreverywhere"), "homwork" (drawn as "hanwak") read as "handle", and
+"favoril food" as "fruit food". Loading takes about 10 s from the cache; Tidy
 mode is instant.
 
 Benchmarks and test tooling are in `tests/`: `make_evalset.py`,
@@ -165,8 +166,8 @@ node tests/test_tidy.mjs
 * The synthesiser still sometimes wobbles on a letter. The best-of-3 selection
   and the self-check reduce this, but don't remove it.
 * Reading is the weakest link. The reader occasionally "fixes" a word into the
-  wrong real word ("hamster" for a scrawled "homework"). 4B does this less than
-  2B; in the real app, Gemma 3 4B (already bundled) could do this step.
+  wrong real word ("handle" for a scrawled "homework"). In the real app, Gemma 3
+  4B (already bundled) could do the MEANT step.
 * *My handwriting* faithfully copies how you shape letters, so a loopy "it will"
   stays loopy as long as it still reads correctly.
 * Drawings and diagrams aren't detected. If the reader can't find any letters,

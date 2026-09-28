@@ -113,6 +113,13 @@ line-buffered. Also, huggingface_hub 1.x keeps finished blobs in a shared
   per letter / 1.25.
 - `--reader apple` works: 0.7 s a line, 15-17/24, below 4B's 19/24.
 
+**Later the same day:** the reader went back to Qwen3-VL-2B (lighter, and the
+model the iPhone/iPad app runs). Moving macOS Vision's hint BEFORE the
+instructions stopped the model echoing it (reads went from 2.3 s to 1 s), and
+2B now matches 4B: 10/12 and 9/12 intended sentences, 1.8 s a line. The 13
+styles have names ("Clean print" ... "Flowing cursive") instead of numbers.
+The iOS app is a separate project, `~/Desktop/HandwritingMagic-iOS`.
+
 **Still open**
 - Reading is the weak link on very messy words ("hanwak" -> "hamster").
   Candidates: Gemma 3 4B for the MEANT step (as in the iPad app), or asking the
