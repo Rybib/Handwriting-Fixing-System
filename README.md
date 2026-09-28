@@ -39,9 +39,11 @@ Python for you (no admin rights needed).
 `http://<your-mac-ip>:8765` address in Safari on an iPad on the same Wi-Fi.
 Pencil pressure is used for line width, and palm rejection is on.
 
-**Or as an app on your iPhone or iPad:** `~/Desktop/HandwritingMagic-iOS` is an
+**Or as an app on your iPhone or iPad:** the
+[`ios` branch](https://github.com/Rybib/Handwriting-Fixing-System/tree/ios) is an
 Xcode project that runs this same page with the whole pipeline on the device
-(Qwen3-VL-2B via MLX, no Mac needed). See its README.
+(Google ML Kit reads the strokes, Qwen3-VL-2B via MLX works out what was meant;
+no Mac needed). See its README.
 
 ### Controls
 
