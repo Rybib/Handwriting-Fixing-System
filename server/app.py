@@ -222,6 +222,15 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(500, {"error": f"{type(e).__name__}: {e}"})
 
 
+def is_our_demo(url):
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"{url}/api/status", timeout=2) as r:
+            return "synth" in json.loads(r.read())
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def lan_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -241,22 +250,24 @@ def main():
     ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args()
 
-    url = f"http://localhost:{args.port}"
     host = "0.0.0.0" if args.lan else "127.0.0.1"
-    try:
-        httpd = ThreadingHTTPServer((host, args.port), Handler)
-    except OSError:
-        # Most likely the demo is already running (launcher double-clicked twice).
+    httpd = None
+    for port in range(args.port, args.port + 20):
+        url = f"http://127.0.0.1:{port}"
         try:
-            import urllib.request
-            urllib.request.urlopen(f"{url}/api/status", timeout=2).read()
-            print(f"Handwriting Magic is already running at {url} - opening it.")
-            if not args.no_browser:
-                webbrowser.open(url)
-            return
-        except Exception:  # noqa: BLE001
-            print(f"Port {args.port} is in use by another program. Try:  ./run.sh --port 8766")
-            sys.exit(1)
+            httpd = ThreadingHTTPServer((host, port), Handler)
+            break
+        except OSError:
+            if is_our_demo(url):     # launcher double-clicked twice: just show the running one
+                print(f"Handwriting Magic is already running at {url} - opening it.")
+                if not args.no_browser:
+                    webbrowser.open(url)
+                return
+            print(f"Port {port} is used by another program, trying {port + 1} ...")
+    if httpd is None:
+        print(f"Ports {args.port}-{args.port + 19} are all busy. Try:  ./run.sh --port 9000")
+        sys.exit(1)
+    args.port = port
     threading.Thread(target=load_models, args=(args.reader,), daemon=True).start()
     print(f"\n  Rytability handwriting demo: {url}")
     if args.lan and lan_ip():

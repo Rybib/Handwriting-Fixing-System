@@ -27,8 +27,9 @@ Tidy-only mode.
 
 The first run sets up a Python environment, installs PyTorch and Transformers
 (about 1 GB), then downloads the models (about 4.5 GB for the handwriting reader
-and 43 MB for the handwriting synthesiser). After that, `./run.sh` opens
-`http://localhost:8765` in a few seconds. It needs Python 3.10 or newer. If it
+and 43 MB for the handwriting synthesiser). After that, `./run.sh` opens the demo
+in your browser within a few seconds, normally at `http://127.0.0.1:8765`. If
+another program is using that port, it takes the next free one. It needs Python 3.10 or newer. If it
 can't find one, it installs [uv](https://docs.astral.sh/uv/), which fetches
 Python for you (no admin rights needed).
 
