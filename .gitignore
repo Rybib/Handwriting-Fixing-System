@@ -1,5 +1,7 @@
 # the reader is 1.7 GB: scripts/get_model.sh puts it back
 HandwritingMagic/Qwen3VLModel.bundle/
+# ML Kit's English handwriting model (Google's files): scripts/get_mlkit_model.sh fetches them
+HandwritingMagic/MLKitEnglishModel.bundle/FileData/
 # the handwriting synthesiser's weights + styles: scripts/export_synth.py makes them
 HandwritingMagic/Resources/hand_synth.bin
 HandwritingMagic/Resources/hand_synth.json

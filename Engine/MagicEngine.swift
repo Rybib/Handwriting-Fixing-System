@@ -62,7 +62,7 @@ final class MagicEngine: @unchecked Sendable {
         }
         proofreads = VisionOCR.works()
         #if canImport(MLKitDigitalInkRecognition)
-        update { $0.phase = "Getting Google's handwriting recognizer (20 MB, once)" }
+        update { $0.phase = "Getting Google's handwriting recognizer ready" }
         do {
             inkReader = try await InkReader.load()
             literalSource = "ML Kit"

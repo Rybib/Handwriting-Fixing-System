@@ -3,8 +3,7 @@
 The Mac demo (`~/Desktop/HandwritingMagic`), running on a touchscreen. Write with
 your finger or an Apple Pencil, then tap **✨ Magic**: everything you wrote
 dissolves into sparkles and comes back neat, spelled correctly, and in your handwriting.
-Everything runs on the device. The first launch needs the internet once, to
-fetch Google's 20 MB handwriting recognizer; after that it works in Airplane Mode.
+Everything runs on the device, and it works in Airplane Mode from the first launch.
 
 This is a playground for trying the idea on a real screen before any of it
 goes into Rytability.
@@ -23,9 +22,11 @@ cd HandwritingMagic && ./run.sh --reader none      # first run: sets up Python, 
 cd ../HandwritingMagic-iOS
 ../HandwritingMagic/.venv/bin/python scripts/export_synth.py   # -> HandwritingMagic/Resources/hand_synth.bin/json
 scripts/get_model.sh                                          # -> the 1.7 GB reader, Qwen3VLModel.bundle
+scripts/get_mlkit_model.sh                                    # -> ML Kit's 13 MB English model, MLKitEnglishModel.bundle
 ```
 
-Two things are deliberately not in git: the reader (1.7 GB, too big) and the
+Three things are deliberately not in git: the reader (1.7 GB, too big), ML
+Kit's English model (Google's files, fetched from dl.google.com), and the
 synthesiser's weights (they come from a repo with no licence and were trained
 on IAM-OnDB, which is for non-commercial research only, so each machine
 fetches its own copy, as the Mac demo does). The Xcode project also expects
@@ -59,7 +60,8 @@ HandwritingMagic/            the app
                              PageServer, which answers the page's /api calls
   Web.bundle/                the page, copied from the Mac demo's web/
   Resources/hand_synth.*     the handwriting synthesiser's weights + 13 styles
-  Qwen3VLModel.bundle/       the reader: Qwen3-VL-2B-Instruct, 4-bit MLX (not in git)
+  Qwen3VLModel.bundle/       Qwen3-VL-2B-Instruct, 4-bit MLX: what was meant (not in git)
+  MLKitEnglishModel.bundle/  ML Kit's English handwriting model (FileData not in git)
 Engine/                      the pipeline, in Swift (shared with MagicCheck)
   MagicEngine.swift          read -> write in your style + a clean style -> proofread
   InkReader.swift            Google ML Kit Digital Ink: reads the pen strokes literally
@@ -89,6 +91,16 @@ ML Kit comes from [d-date/google-mlkit-swiftpm](https://github.com/d-date/google
 publishes it for CocoaPods). It needs `-ObjC -all_load` in Other Linker Flags
 and `HandwritingMagic/MLKitDigitalInkRecognition_resource.bundle` (the model
 download manifest; without it the download silently never starts).
+
+ML Kit only offers its handwriting models as a download (it has 300+
+languages). So the app carries the English one, the exact files ML Kit would
+download (`MLKitEnglishModel.bundle`), and on first launch copies them to where
+ML Kit keeps its downloads, plus its one small bookkeeping file, named after
+the app's bundle id. ML Kit then sees the model as already downloaded (checked
+on a fresh install in the Simulator). This isn't an official ML Kit feature: if
+an update stores downloads differently, the copy does nothing and ML Kit just
+downloads the model once instead. Before shipping it in Rytability, check that
+Google's ML Kit terms allow carrying the model in the app.
 
 The MLX packages come from Rytability's vendored copies in
 `~/Desktop/Files/App Work/dependencies` (`mlx-swift-lm` and `swift-transformers`,
@@ -164,7 +176,7 @@ ML Kit more.
 
 ## Before merging into Rytability
 
-- **No second model needed:** ML Kit (20 MB) reads, and Rytability's Gemma,
+- **No second model needed:** ML Kit (13 MB) reads, and Rytability's Gemma,
   text only, works out what was meant: 9/12 above, one behind Qwen with the ink.
 
 - Measure it on the devices: time per line and memory. The reader needs about
