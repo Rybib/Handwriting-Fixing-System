@@ -9,6 +9,28 @@ fetch Google's 20 MB handwriting recognizer; after that it works in Airplane Mod
 This is a playground for trying the idea on a real screen before any of it
 goes into Rytability.
 
+## Getting the code
+
+This app lives on the `ios` branch of
+[Rybib/Handwriting-Fixing-System](https://github.com/Rybib/Handwriting-Fixing-System);
+the Mac demo is on the default branch. Clone them side by side on the Desktop:
+
+```bash
+cd ~/Desktop
+git clone https://github.com/Rybib/Handwriting-Fixing-System HandwritingMagic
+git clone -b ios https://github.com/Rybib/Handwriting-Fixing-System HandwritingMagic-iOS
+cd HandwritingMagic && ./run.sh --reader none      # first run: sets up Python, fetches the synthesiser (Ctrl-C when it's up)
+cd ../HandwritingMagic-iOS
+../HandwritingMagic/.venv/bin/python scripts/export_synth.py   # -> HandwritingMagic/Resources/hand_synth.bin/json
+scripts/get_model.sh                                          # -> the 1.7 GB reader, Qwen3VLModel.bundle
+```
+
+Two things are deliberately not in git: the reader (1.7 GB, too big) and the
+synthesiser's weights (they come from a repo with no licence and were trained
+on IAM-OnDB, which is for non-commercial research only, so each machine
+fetches its own copy, as the Mac demo does). The Xcode project also expects
+Rytability's vendored packages at `~/Desktop/Files/App Work/dependencies`.
+
 ## Run it on your iPhone or iPad
 
 1. Open `HandwritingMagic.xcodeproj` in Xcode.
