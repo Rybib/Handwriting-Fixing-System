@@ -42,17 +42,20 @@ Pencil pressure is used for line width, and palm rejection is on.
 **Or as an app on your iPhone or iPad:** the
 [`ios` branch](https://github.com/Rybib/Handwriting-Fixing-System/tree/ios) is an
 Xcode project that runs this same page with the whole pipeline on the device
-(Google ML Kit reads the strokes, Qwen3-VL-2B via MLX works out what was meant;
+(Google ML Kit reads the strokes, Rytability's Gemma 3 4B via MLX reads the whole passage and works out what was meant;
 no Mac needed). See its README.
 
 ### Controls
 
 | | |
 |---|---|
-| **✨ Magic / Enter** | Reads everything written since the last press, works out what you meant, fixes the spelling, and rewrites it neatly in your handwriting. Nothing changes until you press it, so it never rewrites a sentence you're still in the middle of |
+| **Pen / Eraser (P / E)** | The eraser wipes whole strokes. It leaves alone anything Magic is rewriting at that moment |
+| **Ink colour, thickness, Pressure** | The rewrite keeps the ink's colour and thickness. With Pressure on, pressing the Pencil harder draws a thicker line. These settings are remembered |
+| **✨ Magic / Enter** | Reads everything written since the last press, works out what you meant, fixes the spelling, and rewrites it neatly in your handwriting. Lines written one under the next are sent together as one passage (writing elsewhere on the page goes separately), and each line is rewritten in place. Nothing changes until you press it, so it never rewrites a sentence you're still in the middle of |
 | **Neatness** | How neat the rewrite is (the synthesiser's sampling bias) |
 | **Style** | *My handwriting* copies your style, and switches to *Tall narrow print* for any line where the copy reads worse; the card under the page says so. The 13 named styles, from *Clean print* to *Flowing cursive*, are other writers from the training data |
 | **Fix spelling** | Off: Magic rewrites exactly what you wrote, just neater |
+| **⚙ Settings** | Switch the parts of the reading on and off (reading lines together, ML Kit, Gemma, Gemma looking at the ink, proofreading), each with whether it works on this device, plus **Turn everything on**. ML Kit and Gemma are in the iPhone and iPad app only |
 | **👁 / hold Space** | Shows what you originally wrote |
 | **↶ / ⌘Z** | Undoes the last stroke or the last fix |
 

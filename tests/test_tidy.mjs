@@ -1,6 +1,6 @@
 // Fast geometry tests for the Tidy beautifier: node tests/test_tidy.mjs
 import assert from "node:assert/strict";
-import { groupLines, tidyLine, coreMetrics } from "../web/js/tidy.js";
+import { groupBlocks, groupLines, tidyLine, coreMetrics } from "../web/js/tidy.js";
 
 // A fake handwritten line: 4 "words" of loopy letters on a tilted, wavy baseline,
 // with one word written much bigger than the rest.
@@ -55,4 +55,17 @@ const boxLine = (dy) => boxes.map(([x0, x1, y0, y1]) => ({ pts: [{ x: x0, y: y0 
 assert.equal(groupLines(boxLine(0)).length, 1, "an i-dot or a y tail must not split a line");
 const stacked = groupLines([...boxLine(0), ...boxLine(72)]);   // next ruled line
 assert.deepEqual(stacked.map((L) => L.length), [boxes.length, boxes.length], "two ruled lines stay separate");
+
+// Blocks: three lines on consecutive ruled lines are one piece of writing; a
+// line after a blank ruled line, and a note far off to the right on the same
+// row as the first line, are blocks of their own.
+const para = [...boxLine(0), ...boxLine(72), ...boxLine(144)];
+const note = boxes.slice(0, 5).map(([x0, x1, y0, y1]) => ({ pts: [{ x: x0 + 1200, y: y0 }, { x: x1 + 1200, y: y1 }] }));
+const later = boxLine(360);
+const page = [...para, ...note, ...later];
+const blocks = groupBlocks(page, groupLines(page), 72);
+const n = boxes.length;
+const shape = (B) => B.map((L) => L.length).join(",");
+assert.deepEqual(blocks.map(shape).sort(), [`${n}`, `${n},${n},${n}`, "5"], "paragraph, side note, later line");
+assert.ok(blocks.find((B) => shape(B) === "5").flat().every((i) => i >= 3 * n && i < 3 * n + 5), "the side note is its own block");
 console.log("ok tidy tests");

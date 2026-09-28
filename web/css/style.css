@@ -27,7 +27,12 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper)
 .title { font-weight: 700; font-size: 15px; }
 .subtitle { color: var(--muted); font-size: 12px; }
 
-.toolbar { position: fixed; top: calc(14px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px;
+#paper.erasing { cursor: cell; }
+
+/* the pen tools and the magic tools: side by side when they fit, else two rows */
+.topbar { position: fixed; top: calc(14px + env(safe-area-inset-top)); left: 0; right: 0; display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 8px 10px; padding: 0 8px; pointer-events: none; }
+.toolbar { pointer-events: auto; display: flex; align-items: center; gap: 10px;
   padding: 6px 8px; border-radius: 16px; background: var(--glass); border: 1px solid var(--line);
   backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4);
   box-shadow: 0 8px 30px rgba(20, 30, 60, .10); white-space: nowrap; }
@@ -41,10 +46,61 @@ button.magic.busy { background: linear-gradient(110deg, var(--imp-b) 30%, var(--
 .sep { width: 1px; height: 22px; background: var(--line); }
 .ctl { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
 .ctl input[type=range] { width: 90px; accent-color: var(--imp-b); }
-.ctl select { font: inherit; font-weight: 600; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; background: white; }
+.ctl select { font: inherit; font-weight: 600; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; background: white; max-width: 190px; }
 .ctl.toggle input { accent-color: var(--imp-b); }
 button.icon { border: 0; background: transparent; width: 32px; height: 32px; border-radius: 9px; font-size: 16px; cursor: pointer; color: var(--text); }
 button.icon:hover, button.icon.active { background: rgba(20, 30, 60, .07); }
+button.icon svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; }
+button.tool.active { background: rgba(0, 122, 255, .13); color: var(--imp-b); }
+.swatches { display: flex; gap: 6px; }
+button.swatch { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid white; background: var(--c); cursor: pointer;
+  box-shadow: 0 0 0 1px var(--line); transition: transform .12s; }
+button.swatch.active { box-shadow: 0 0 0 2px var(--c); transform: scale(1.08); }
+.sizebox { width: 16px; height: 16px; display: grid; place-items: center; }
+.sizedot { display: block; border-radius: 50%; max-width: 16px; max-height: 16px; }
+#size { width: 80px; }
+
+/* settings sheet */
+.sheet-backdrop { position: fixed; inset: 0; z-index: 10; background: rgba(20, 30, 60, .18); display: grid; place-items: center; padding: 16px;
+  animation: fadein .2s ease both; }
+.sheet-backdrop[hidden] { display: none; }
+@keyframes fadein { from { opacity: 0; } }
+.sheet { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: white; border: 1px solid var(--line);
+  border-radius: 20px; box-shadow: 0 20px 60px rgba(20, 30, 60, .22); padding: 18px 20px 20px; animation: rise .3s cubic-bezier(.2, .9, .3, 1.1) both;
+  -webkit-user-select: none; user-select: none; }
+.sheet header { display: flex; align-items: center; justify-content: space-between; }
+.sheet h2 { margin: 0; font-size: 20px; }
+.sheet .lead { color: var(--muted); margin: 6px 0 14px; }
+.opt { display: flex; gap: 14px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.opt.sub { padding-left: 26px; }
+.opt.off { opacity: .5; cursor: default; }
+.opt .txt { flex: 1; }
+.opt .name { font-weight: 700; font-size: 15px; }
+.opt .desc { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.opt .state { font-size: 12px; font-weight: 600; margin-top: 4px; }
+.opt .state.ok { color: var(--good); }
+.opt .state.no { color: #b3261e; }
+.opt .state::before { content: "●"; margin-right: 5px; font-size: 9px; vertical-align: 2px; }
+.switch { appearance: none; -webkit-appearance: none; flex: none; width: 50px; height: 30px; border-radius: 15px; background: #d6d9e0; position: relative;
+  cursor: pointer; transition: background .2s; margin: 2px 0 0; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 26px; height: 26px; border-radius: 50%; background: white;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .2); transition: transform .2s; }
+.switch:checked { background: var(--good); }
+.switch:checked::after { transform: translateX(20px); }
+.switch:disabled { cursor: default; }
+button.allon { width: 100%; margin-top: 8px; border: 0; padding: 12px; border-radius: 12px; font: inherit; font-weight: 700; color: white; cursor: pointer;
+  background: linear-gradient(135deg, var(--imp-a), var(--imp-b) 55%, var(--imp-c)); }
+
+/* Magic at work: a band of colour sweeps over the ink (see startShimmer). Only
+   opacity and transform animate, so the compositor runs it without the page. */
+.shimmer { position: fixed; pointer-events: none; overflow: hidden; opacity: 0; transition: opacity .25s;
+  -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  background: rgba(0, 122, 255, .16); will-change: opacity; }
+.shimmer.on { opacity: 1; }
+.shimmer i { position: absolute; top: 0; bottom: 0; left: 0; width: 300%; will-change: transform;
+  background: linear-gradient(90deg, transparent 33.3%, var(--imp-a) 44%, var(--imp-b) 50%, var(--imp-c) 57%, transparent 66.7%);
+  animation: sweep .9s linear infinite; }
+@keyframes sweep { from { transform: translateX(-66.667%); } to { transform: translateX(0); } }
 
 .hint { position: fixed; top: 46%; left: 50%; transform: translate(-50%, -50%); color: var(--muted); font-size: 17px;
   pointer-events: none; transition: opacity .6s; text-align: center; max-width: 80vw; }
@@ -70,14 +126,20 @@ button.icon:hover, button.icon.active { background: rgba(20, 30, 60, .07); }
 .status.ready .dot { background: var(--good); }
 .status.error .dot { background: #d93025; }
 
-@media (max-width: 1100px) {
-  .brand { display: none; }
-  .ctl span { display: none; }
+@media (max-width: 1500px) { .brand { display: none; } }
+@media (max-width: 860px) { .ctl span:not(.keep) { display: none; } }
+
+/* fingers and Pencils: bigger targets */
+@media (pointer: coarse) {
+  button.icon { width: 40px; height: 40px; }
+  button.swatch { width: 30px; height: 30px; }
+  .swatches { gap: 8px; }
 }
 
 /* phones: the toolbar wraps onto two rows and the buttons get finger-sized */
 @media (max-width: 720px) {
-  .toolbar { flex-wrap: wrap; justify-content: center; row-gap: 6px; width: calc(100vw - 16px); max-width: 480px; }
+  .toolbar { flex-wrap: wrap; justify-content: center; row-gap: 6px; width: 100%; max-width: 480px; }
+  .topbar { gap: 6px; }
   .sep { display: none; }
   .ctl input[type=range] { width: 80px; }
   .ctl select { max-width: 150px; }
