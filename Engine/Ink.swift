@@ -54,6 +54,98 @@ enum Ink {
         return ctx.makeImage()
     }
 
+    /// A picture of a whole passage for the reader, as near square as the
+    /// writing allows. Gemma's vision tower squeezes every picture into
+    /// 896 x 896, so a long line as it is would come out as a thin smear:
+    /// lines longer than the passage is tall are wrapped at word gaps (each
+    /// line still starts a new row), and the picture is padded to a square.
+    static func renderPassage(_ lines: [[Stroke]], xHeight: Float = 56, pad: Float = 28) -> CGImage? {
+        struct Word { var strokes: [Stroke]; var lo: SIMD2<Float>; var hi: SIMD2<Float> }
+        let lines = lines.map { $0.filter { !$0.isEmpty } }.filter { !$0.isEmpty }
+        guard !lines.isEmpty else { return nil }
+        let box = { (ss: [Stroke]) -> (SIMD2<Float>, SIMD2<Float>) in
+            var lo = ss[0][0], hi = ss[0][0]
+            for s in ss { for p in s { lo = simd_min(lo, p); hi = simd_max(hi, p) } }
+            return (lo, hi)
+        }
+        // one scale for the passage, so its lines keep their sizes relative to each other
+        let heights = lines.map { l in max(1, bodyMetrics(l.flatMap { $0 }.map(\.y)).core) }
+        let scale = xHeight / percentile(heights, 0.5)
+        // each line: its pieces of ink (strokes that overlap or nearly touch), line-relative, scaled
+        let rows: [[Word]] = lines.map { l in
+            let (lo, _) = box(l)
+            var words: [Word] = []
+            for s in l.map({ $0.map { ($0 - lo) * scale } }).sorted(by: { box([$0]).0.x < box([$1]).0.x }) {
+                let (slo, shi) = box([s])
+                if var w = words.last, slo.x <= w.hi.x + xHeight * 0.2 {
+                    w.strokes.append(s); w.lo = simd_min(w.lo, slo); w.hi = simd_max(w.hi, shi)
+                    words[words.count - 1] = w
+                } else {
+                    words.append(Word(strokes: [s], lo: slo, hi: shi))
+                }
+            }
+            return words
+        }
+        let lineWidths = rows.map { r in r.last!.hi.x - r.first!.lo.x }
+        let rowH = rows.map { r in r.map(\.hi.y).max()! - r.map(\.lo.y).min()! }.max()! + xHeight * 0.6
+        // wrap long lines so the picture is at most about 2:1 (it's padded to a square, not stretched)
+        let widest = rows.flatMap { $0 }.map { $0.hi.x - $0.lo.x }.max()!
+        let maxW = max(widest, (lineWidths.reduce(0, +) * rowH * 2).squareRoot(), xHeight * 24)      // ~25 letters: short lines stay whole
+        var placed: [(Word, SIMD2<Float>)] = []      // piece, its offset
+        var y: Float = 0, width: Float = 0
+        for r in rows {
+            let top = r.map(\.lo.y).min()!
+            var start = 0
+            while start < r.count {
+                // this row runs to the end of the line, or breaks at the widest gap in the last 40% of the
+                // row: handwriting has gaps inside words too, and the widest one is most likely between words
+                let x0 = r[start].lo.x
+                var end = r.count
+                if r.last!.hi.x - x0 > maxW {
+                    var late: (k: Int, gap: Float)?, any: (k: Int, gap: Float)?
+                    for k in (start + 1)..<r.count where r[k - 1].hi.x - x0 <= maxW {
+                        let gap = r[k].lo.x - r[k - 1].hi.x
+                        if gap > (any?.gap ?? -.infinity) { any = (k, gap) }
+                        if r[k - 1].hi.x - x0 >= maxW * 0.6, gap > (late?.gap ?? -.infinity) { late = (k, gap) }
+                    }
+                    end = (late ?? any)?.k ?? start + 1
+                }
+                for w in r[start..<end] { placed.append((w, SIMD2(-x0, y - top))) }
+                width = max(width, r[end - 1].hi.x - x0)
+                y += rowH
+                start = end
+            }
+        }
+        let height = y - xHeight * 0.6
+        let side = Int((max(width, height) + 2 * pad).rounded(.up))
+        let origin = SIMD2<Float>((Float(side) - width) / 2, (Float(side) - height) / 2)
+        guard let ctx = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: side, height: side))
+        ctx.translateBy(x: 0, y: CGFloat(side))
+        ctx.scaleBy(x: 1, y: -1)
+        // thick enough to survive being shrunk to 896 px
+        let lw = CGFloat(max(3, xHeight / 12 * max(1, Float(side) / 1400)))
+        ctx.setStrokeColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+        ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+        ctx.setLineWidth(lw)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        for (w, off) in placed {
+            for s in w.strokes {
+                let pts = s.map { p -> CGPoint in let q = p + off + origin; return CGPoint(x: CGFloat(q.x), y: CGFloat(q.y)) }
+                if pts.count == 1 {
+                    ctx.fillEllipse(in: CGRect(x: pts[0].x - lw / 2, y: pts[0].y - lw / 2, width: lw, height: lw))
+                } else {
+                    ctx.addLines(between: pts)
+                    ctx.strokePath()
+                }
+            }
+        }
+        return ctx.makeImage()
+    }
+
     /// numpy.percentile with linear interpolation.
     static func percentile(_ values: [Float], _ q: Float) -> Float {
         let s = values.sorted()

@@ -156,6 +156,49 @@ export function groupLines(strokes) {
   return lines.filter((L) => L.idx.length).sort((a, b) => a.cy - b.cy).map((L) => L.idx.sort((a, b) => a - b));
 }
 
+// Lines written together - each one under the last, overlapping it side to
+// side - are one piece of writing, and Magic reads them together so every line
+// is read knowing the others. Writing somewhere else (a list off to the side,
+// a note further down after a gap) is a block of its own. A line from
+// groupLines is first split where it has a wide horizontal gap, since two
+// things written side by side share a line but aren't one sentence.
+// Returns blocks in reading order; each block is its lines (stroke indices), top to bottom.
+export function groupBlocks(strokes, lines, lineGap = 72) {
+  const boxOf = (idx) => bbox(idx.flatMap((i) => strokes[i].pts));
+  const hs = lines.map((idx) => boxOf(idx).h).filter((h) => h > 4);
+  const lineH = clamp(median(hs) || 40, 12, 400);
+  // pieces of a line more than a few words' worth of blank apart
+  const segs = [];
+  for (const idx of lines) {
+    const items = idx.map((i) => ({ i, b: bbox(strokes[i].pts) })).sort((a, b) => a.b.minX - b.b.minX);
+    let cur = null;
+    for (const it of items) {
+      if (cur && it.b.minX - cur.maxX > lineH * 4) { segs.push(cur); cur = null; }
+      if (!cur) cur = { idx: [], maxX: -Infinity };
+      cur.idx.push(it.i); cur.maxX = Math.max(cur.maxX, it.b.maxX);
+    }
+    if (cur) segs.push(cur);
+  }
+  const S = segs.map((sg) => ({ idx: sg.idx.sort((a, b) => a - b), ...boxOf(sg.idx) })).sort((a, b) => a.cy - b.cy || a.minX - b.minX);
+  const maxDy = Math.max(1.8 * lineH, 1.45 * lineGap);
+  const blocks = [];
+  for (const sg of S) {
+    // the block whose last line is just above this one and overlaps it most
+    let best = null, bestOverlap = 0;
+    for (const B of blocks) {
+      const last = B.at(-1);
+      const dy = sg.cy - last.cy;
+      if (dy < lineH * 0.3 || dy > maxDy) continue;
+      const overlap = Math.min(sg.maxX, last.maxX) - Math.max(sg.minX, last.minX);
+      const aligned = Math.abs(sg.minX - last.minX) < lineH * 3;
+      const score = Math.max(overlap, aligned ? 1 : 0);
+      if (score > bestOverlap) { best = B; bestOverlap = score; }
+    }
+    if (best) best.push(sg); else blocks.push([sg]);
+  }
+  return blocks.map((B) => B.map((sg) => sg.idx));
+}
+
 export function groupWords(strokePts, gapT) {
   const items = strokePts.map((pts, i) => ({ i, b: bbox(pts) })).sort((a, b) => a.b.minX - b.b.minX);
   const words = [];

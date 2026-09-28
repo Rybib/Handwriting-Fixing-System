@@ -26,12 +26,13 @@ final class PageServer: NSObject, WKURLSchemeHandler {
             guard let body = Self.body(of: task.request) else {
                 return reply(task, status: 400, json: Self.error("no request body"))
             }
-            Task {
+            // the models run away from the main thread, which keeps the web view (and its animations) going
+            Task.detached(priority: .userInitiated) {
                 do {
                     let result = try await MagicEngine.shared.rewrite(body)
-                    reply(task, json: result)
+                    await self.reply(task, json: result)
                 } catch {
-                    reply(task, status: 500, json: Self.error(error.localizedDescription))
+                    await self.reply(task, status: 500, json: Self.error(error.localizedDescription))
                 }
             }
         default:

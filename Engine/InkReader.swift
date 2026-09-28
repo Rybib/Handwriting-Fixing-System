@@ -10,7 +10,7 @@ import MLKitDigitalInkRecognition
 /// the English model is 13 MB, carried in the app (see installBundledModel).
 ///
 /// It returns what is literally WRITTEN. Working out what was MEANT (spelling,
-/// their/there) is up to Qwen or the spellchecker, see MagicEngine.
+/// their/there) is up to Gemma or the spellchecker, see MagicEngine.
 final class InkReader: @unchecked Sendable {
     private let recognizer: DigitalInkRecognizer
 

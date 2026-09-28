@@ -3,7 +3,7 @@ import Foundation
 import ImageIO
 import MLX
 
-/// `MagicCheck --readers <model dir> ...`: compares reading models the way the
+/// `MagicCheck --readers <model dir> ...`: compares Gemma-style reading models the way the
 /// app runs them (Engine/Readers.swift on MLX), on the 24 eval images from the
 /// Mac demo (12 eval-set lines, 12 drawn through the browser), each with the
 /// literal OCR reading as the hint. Any vision model mlx-swift-lm supports works.
@@ -23,7 +23,7 @@ enum ReaderBench {
             let url = URL(fileURLWithPath: dir)
             do {
                 var t = Date()
-                let reader = try await QwenReader(modelDirectory: url, description: url.lastPathComponent)
+                let reader = try await GemmaReader(modelDirectory: url, description: url.lastPathComponent)
                 let load = Date().timeIntervalSince(t)
                 MLX.GPU.resetPeakMemory()
                 var right = ["ev": 0, "evb": 0], times: [Double] = [], wrong: [String] = []
@@ -33,7 +33,8 @@ enum ReaderBench {
                     let image = path.isEmpty ? nil : loadImage(path)
                     if !path.isEmpty && image == nil { continue }
                     t = Date()
-                    let (_, meant) = QwenReader.parse(try await reader.generate(item["prompt"] ?? QwenReader.prompt, image: image))
+                    let prompt = item["prompt"] ?? GemmaReader.prompt([""], seesInk: true)
+                    let meant = GemmaReader.parse(try await reader.generate(prompt, image: image), lines: 1)[0].meant ?? ""
                     if i > 0 { times.append(Date().timeIntervalSince(t)) }      // the first includes warm-up
                     let set = URL(fileURLWithPath: path).lastPathComponent.hasPrefix("evb") ? "evb" : "ev"
                     if normal(meant) == normal(item["intended"] ?? "") { right[set, default: 0] += 1 } else { wrong.append("\(set): \(meant)") }

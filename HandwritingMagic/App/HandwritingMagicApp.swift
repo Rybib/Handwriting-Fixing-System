@@ -6,7 +6,22 @@ import SwiftUI
 struct HandwritingMagicApp: App {
     init() {
         // loads in the background; you can write meanwhile
-        Task.detached(priority: .userInitiated) { await MagicEngine.shared.load() }
+        Task.detached(priority: .userInitiated) {
+            await MagicEngine.shared.load()
+            #if DEBUG
+            // MAGIC_SELFTEST=<request.json>: rewrite it once loaded and print the reply (checks ML Kit in the Simulator)
+            if let path = ProcessInfo.processInfo.environment["MAGIC_SELFTEST"], let body = FileManager.default.contents(atPath: path) {
+                print("[selftest] reader: \(MagicEngine.shared.status.reader ?? "none"), error: \(MagicEngine.shared.status.error ?? "none")")
+                do {
+                    let reply = try await MagicEngine.shared.rewrite(body)
+                    let lines = (try JSONSerialization.jsonObject(with: reply) as? [String: Any])?["lines"] as? [[String: Any]] ?? []
+                    for l in lines { print("[selftest] written \"\(l["written"] ?? "")\" -> \"\(l["text"] ?? "")\"") }
+                } catch {
+                    print("[selftest] failed: \(error)")
+                }
+            }
+            #endif
+        }
     }
 
     var body: some Scene {

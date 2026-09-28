@@ -16,6 +16,9 @@ struct MagicPageView: UIViewRepresentable {
         web.scrollView.isScrollEnabled = false
         web.scrollView.bounces = false
         web.scrollView.pinchGestureRecognizer?.isEnabled = false
+        // hand every Pencil touch to the page at once, so a quick lift-and-touch
+        // between letters isn't held back while the scroll view decides what it is
+        web.scrollView.delaysContentTouches = false
         web.scrollView.contentInsetAdjustmentBehavior = .never
         web.allowsLinkPreview = false
         #if DEBUG

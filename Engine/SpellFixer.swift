@@ -8,7 +8,7 @@ import AppKit
 /// The system spellchecker (the one behind the red underlines): the light way
 /// to get from what was WRITTEN to what was MEANT, with no AI model. It fixes
 /// misspelled words ("freind" -> "friend") but not real words in the wrong
-/// place ("their" for "there"); that takes Qwen.
+/// place ("their" for "there"); that takes Gemma.
 enum SpellFixer {
     static func fix(_ text: String, language: String = "en_US") -> String {
         var out = ""

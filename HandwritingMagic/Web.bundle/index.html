@@ -19,28 +19,64 @@
     </div>
   </header>
 
-  <nav class="toolbar" id="toolbar">
-    <button class="magic" id="magic" title="Read everything on the page, fix the spelling, and rewrite it neatly in your handwriting (or press Enter)">✨ Magic</button>
-    <div class="sep"></div>
-    <label class="ctl" title="How neat the rewrite should be">
-      <span>Neatness</span>
-      <input type="range" id="neatness" min="0" max="100" value="90">
-    </label>
-    <label class="ctl" id="styleCtl" title="Whose handwriting to rewrite in">
-      <span>Style</span>
-      <select id="style">
-        <option value="mine" selected>My handwriting</option>
-      </select>
-    </label>
-    <label class="ctl toggle" id="spellCtl" title="Fix spelling while rewriting">
-      <input type="checkbox" id="spelling" checked>
-      <span>Fix spelling</span>
-    </label>
-    <div class="sep"></div>
-    <button class="icon" id="compare" title="Hold to see what you actually wrote (or hold Space)">👁</button>
-    <button class="icon" id="undo" title="Undo (⌘Z)">↶</button>
-    <button class="icon" id="clear" title="Clear the page">✕</button>
-  </nav>
+  <div class="topbar" id="topbar">
+    <nav class="toolbar" id="penbar" aria-label="Pen">
+      <button class="icon tool" id="toolPen" title="Pen (P)" aria-label="Pen">
+        <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </button>
+      <button class="icon tool" id="toolEraser" title="Eraser: wipes whole strokes (E)" aria-label="Eraser">
+        <svg viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>
+      </button>
+      <div class="sep"></div>
+      <div class="swatches" id="colors"></div>
+      <div class="sep"></div>
+      <label class="ctl" title="Line thickness">
+        <i class="sizebox"><i class="sizedot" id="sizeDot"></i></i>
+        <input type="range" id="size" min="0.5" max="3" step="0.25" value="1" aria-label="Line thickness">
+      </label>
+      <label class="ctl toggle" title="Apple Pencil: press harder for a thicker line">
+        <input type="checkbox" id="pressure" checked>
+        <span class="keep">Pressure</span>
+      </label>
+    </nav>
+    <nav class="toolbar" id="toolbar">
+      <button class="magic" id="magic" title="Read everything on the page, fix the spelling, and rewrite it neatly in your handwriting (or press Enter)">✨ Magic</button>
+      <div class="sep"></div>
+      <label class="ctl" title="How neat the rewrite should be">
+        <span>Neatness</span>
+        <input type="range" id="neatness" min="0" max="100" value="90">
+      </label>
+      <label class="ctl" id="styleCtl" title="Whose handwriting to rewrite in">
+        <span>Style</span>
+        <select id="style">
+          <option value="mine" selected>My handwriting</option>
+        </select>
+      </label>
+      <label class="ctl toggle" id="spellCtl" title="Fix spelling while rewriting">
+        <input type="checkbox" id="spelling" checked>
+        <span>Fix spelling</span>
+      </label>
+      <div class="sep"></div>
+      <button class="icon" id="compare" title="Hold to see what you actually wrote (or hold Space)">👁</button>
+      <button class="icon" id="undo" title="Undo (⌘Z)">↶</button>
+      <button class="icon" id="clear" title="Clear the page">✕</button>
+      <button class="icon" id="settingsBtn" title="Settings: which models Magic uses" aria-label="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+      </button>
+    </nav>
+  </div>
+
+  <div class="sheet-backdrop" id="settings" hidden>
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <header>
+        <h2 id="settingsTitle">Settings</h2>
+        <button class="icon" id="settingsClose" title="Close" aria-label="Close">✕</button>
+      </header>
+      <p class="lead">How ✨ Magic reads your writing. Together, each part covers for the others' mistakes.</p>
+      <div class="opts" id="readingOpts"></div>
+      <button class="allon" id="allOn">Turn everything on</button>
+    </section>
+  </div>
 
   <div class="hint" id="hint">Write something with your mouse, trackpad or Apple Pencil, then press ✨ Magic.</div>
 

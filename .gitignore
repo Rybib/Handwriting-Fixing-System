@@ -1,4 +1,5 @@
-# the reader is 1.7 GB: scripts/get_model.sh puts it back
+# the AI model (Gemma 3 4B + its vision tower) is ~3 GB: scripts/get_model.sh puts it back
+HandwritingMagic/GemmaMLXModel.bundle/
 HandwritingMagic/Qwen3VLModel.bundle/
 # ML Kit's English handwriting model (Google's files): scripts/get_mlkit_model.sh fetches them
 HandwritingMagic/MLKitEnglishModel.bundle/FileData/
