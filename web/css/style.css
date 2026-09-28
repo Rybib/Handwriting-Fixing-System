@@ -31,16 +31,18 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper)
   padding: 6px 8px; border-radius: 16px; background: var(--glass); border: 1px solid var(--line);
   backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4);
   box-shadow: 0 8px 30px rgba(20, 30, 60, .10); white-space: nowrap; }
-.seg { display: flex; background: rgba(20, 30, 60, .06); border-radius: 11px; padding: 2px; }
-.seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 9px; font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; }
-.seg button.on { background: white; color: var(--text); box-shadow: 0 1px 4px rgba(20, 30, 60, .15); }
-.seg button[data-mode="magic"].on { color: white; background: linear-gradient(135deg, var(--imp-a), var(--imp-b) 55%, var(--imp-c)); }
+button.magic { border: 0; padding: 8px 18px; border-radius: 11px; font: inherit; font-weight: 700; color: white; cursor: pointer;
+  background: linear-gradient(135deg, var(--imp-a), var(--imp-b) 55%, var(--imp-c)); box-shadow: 0 3px 12px rgba(0, 122, 255, .3);
+  transition: transform .12s, opacity .2s; }
+button.magic:active { transform: scale(.95); }
+button.magic.busy { background: linear-gradient(110deg, var(--imp-b) 30%, var(--imp-a) 50%, var(--imp-b) 70%) 0 0 / 300% 100%;
+  animation: working 1.2s linear infinite; }
+@keyframes working { to { background-position: -150% 0; } }
 .sep { width: 1px; height: 22px; background: var(--line); }
 .ctl { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
 .ctl input[type=range] { width: 90px; accent-color: var(--imp-b); }
 .ctl select { font: inherit; font-weight: 600; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; background: white; }
 .ctl.toggle input { accent-color: var(--imp-b); }
-.ctl.disabled { opacity: .35; pointer-events: none; }
 button.icon { border: 0; background: transparent; width: 32px; height: 32px; border-radius: 9px; font-size: 16px; cursor: pointer; color: var(--text); }
 button.icon:hover, button.icon.active { background: rgba(20, 30, 60, .07); }
 

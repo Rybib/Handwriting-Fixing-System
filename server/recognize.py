@@ -112,7 +112,11 @@ class VLMReader:
     def read(self, image):
         ocr = self.ocr(image) if self.ocr else ""
         prompt = (OCR_HINT.format(ocr=ocr) if ocr else "") + PROMPT
-        return _parse(self._generate([{"type": "image", "image": image}, {"type": "text", "text": prompt}]))
+        written, meant = _parse(self._generate([{"type": "image", "image": image}, {"type": "text", "text": prompt}]))
+        # an empty or wordless reply would leave the line untouched; the OCR reading is better than nothing
+        if not re.search(r"[A-Za-z0-9]", meant) and re.search(r"[A-Za-z0-9]", ocr):
+            return ocr, ocr
+        return written, meant
 
     def read_literal(self, image):
         return self._generate([{"type": "image", "image": image}, {"type": "text", "text": LITERAL_PROMPT}], 60).strip()

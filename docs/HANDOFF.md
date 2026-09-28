@@ -131,3 +131,12 @@ or Apple Pencil" on touchscreens; `scripts/sync_web.sh` there copies web/ in.
   lenient, top 2 only).
 - The user's own style copies their letter shapes, including loopy ones, as
   long as they read correctly.
+
+**Magic is a button now (after trying the iOS app).** The rewrite used to run
+after a 1.1 s pause, which on a touchscreen fired mid-sentence: half a line
+went off to be read, came back as "couldn't find any words", and the rest was
+fixed a few seconds later, under your pen. Now nothing changes until you press
+✨ Magic (or Enter), which rewrites everything written since the last press.
+Tidy and Off are gone as modes (tidying still prepares the style sample). "No
+words" is only shown when nothing on the page had words, and if the reader's
+reply is empty its OCR hint is used instead.

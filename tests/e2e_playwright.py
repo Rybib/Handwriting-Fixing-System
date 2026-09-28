@@ -4,7 +4,7 @@ Starts from ink in the eval set (or any JSON with "strokes"), moves the mouse
 along it, waits for the magic, and saves screenshots along the way.
 
 usage: python tests/e2e_playwright.py <out_dir> <case.json> [<case.json> ...]
-          [--mode magic|tidy] [--url http://localhost:8765] [--chromium PATH]
+          [--url http://localhost:8765] [--chromium PATH]
 """
 import argparse
 import json
@@ -39,11 +39,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
     ap.add_argument("cases", nargs="+")
-    ap.add_argument("--mode", default="magic")
     ap.add_argument("--url", default="http://localhost:8765")
     ap.add_argument("--chromium", default=os.environ.get("CHROMIUM", "/opt/pw-browsers/chromium"))
     ap.add_argument("--scale", type=float, default=0.8)
-    ap.add_argument("--together", action="store_true", help="write all lines, then pause once")
+    ap.add_argument("--together", action="store_true", help="write all lines, then press Magic once")
     ap.add_argument("--gif", help="record the whole session to this animated GIF")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
@@ -55,12 +54,9 @@ def main():
         page.on("console", lambda m: logs.append(m.text))
         page.on("pageerror", lambda e: logs.append(f"PAGE ERROR: {e}"))
         page.goto(args.url)
-        if args.mode == "magic":
-            t = time.time()
-            page.wait_for_function("document.getElementById('status').classList.contains('ready')", timeout=900_000)
-            print(f"models ready after {time.time() - t:.0f}s")
-        page.click(f"#mode button[data-mode={args.mode}]")
-        page.evaluate("window.__hw.settings.autoDelay = 600")
+        t = time.time()
+        page.wait_for_function("document.getElementById('status').classList.contains('ready')", timeout=900_000)
+        print(f"models ready after {time.time() - t:.0f}s")
 
         frames = []
 
@@ -81,18 +77,17 @@ def main():
             snap(f"{args.out}/{label}_c_done.png")
 
         y = 150 - 55
-        if args.together:
-            page.evaluate("window.__hw.settings.autoDelay = 60000")
         for i, path in enumerate(args.cases):
             case = json.load(open(path))
             draw_case(page, case["strokes"], 110, y, args.scale)
             snap(f"{args.out}/{i:02d}_a_drawn.png")
             if not args.together:
                 print(f"{i:02d}: {case.get('written')!r}")
+                page.click("#magic")
                 wait_done(f"{i:02d}")
             y += 144
         if args.together:
-            page.keyboard.press("Enter")
+            page.click("#magic")
             wait_done("all")
         page.keyboard.down("Space")
         page.screenshot(path=f"{args.out}/zz_compare_original.png")

@@ -15,11 +15,9 @@ const RULE_GAP = 72;
 let ruleTop = 150;      // first ruled line: below the toolbar, which wraps onto two rows on a phone
 
 const settings = {
-  mode: "magic",        // magic | tidy | off
   neatness: 90,         // measured: cleaner fallback style, no worse copies of yours (tests/eval_pipeline.py)
   style: "mine",
   spelling: true,
-  autoDelay: 1100,      // ms of stillness before the magic happens
 };
 
 // The 13 writers the synthesiser learned from (IAM-OnDB), named for how their
@@ -39,7 +37,7 @@ let particles = [];
 let tweens = [];
 let comparing = false;
 let nextId = 1;
-let idleTimer = null;
+let fixing = 0;         // lines sent to be rewritten and not back yet
 let serverInfo = { loading: true, reader: null, synth: false, error: null };
 let penSeen = false;
 
@@ -223,7 +221,6 @@ canvas.addEventListener("pointerdown", (e) => {
   if (e.pointerType === "pen") penSeen = true;
   if (penSeen && e.pointerType === "touch") return;   // palm rejection
   canvas.setPointerCapture(e.pointerId);
-  clearTimeout(idleTimer);
   $("hint").classList.add("gone");
   const path = { id: nextId++, kind: "user", pts: [], alpha: 1, state: "pending" };
   active = { id: e.pointerId, type: e.pointerType, path, modeler: new StrokeModeler() };
@@ -257,57 +254,45 @@ function endStroke(e) {
   history.push({ type: "stroke", path });
   active = null;
   requestRender();
-  scheduleMagic();
 }
 canvas.addEventListener("pointerup", endStroke);
 canvas.addEventListener("pointercancel", endStroke);
 
-function scheduleMagic() {
-  clearTimeout(idleTimer);
-  if (settings.mode === "off") return;
-  idleTimer = setTimeout(processPending, settings.autoDelay);
-}
-
 // ---------------------------------------------------------------------------
-// the magic
-function processPending() {
-  if (active) return scheduleMagic();
+// the magic: only when asked (the ✨ Magic button or Enter), never while
+// writing. A timer that fired on every pause used to grab half a sentence
+// when you stopped to think, and rewrite it under your pen.
+async function runMagic() {
+  if (active) return;       // mid-stroke
   const pending = paths.filter((p) => p.kind === "user" && p.state === "pending");
-  if (!pending.length) return;
-  const lines = groupLines(pending);
-  for (const idx of lines) {
+  if (!pending.length) {
+    if (!fixing) card("Write something first, then press ✨ Magic.", 3500);
+    return;
+  }
+  if (!(serverInfo.synth && !serverInfo.loading && serverInfo.reader)) {
+    card(serverInfo.loading ? `Magic isn't ready yet (${esc(serverInfo.phase || "loading")}). Try again when the dot turns green.`
+      : `Magic is unavailable (${esc(serverInfo.error || "no handwriting reader")}).`, 5000, "err");
+    return;
+  }
+  const groups = groupLines(pending).map((idx) => {
     const group = { id: nextId++, paths: idx.map((i) => pending[i]) };
     group.paths.forEach((p) => { p.state = "busy"; p.orig = p.pts.map((q) => ({ ...q })); p.group = group; });
-    const strength = 0.45 + 0.55 * (settings.neatness / 100);
-    const tidy = tidyLine(group.paths.map((p) => p.orig), { strength });
-    group.tidy = tidy;
-    const canMagic = settings.mode === "magic" && serverInfo.synth && !serverInfo.loading && serverInfo.reader;
-    if (!canMagic) {
-      if (settings.mode === "magic") {
-        card(serverInfo.loading ? `Magic isn't ready yet (${esc(serverInfo.phase || "loading")}), so I just tidied this. It will kick in once the status turns green.`
-          : `Handwriting reader unavailable (${serverInfo.error || "no reader"}), so I tidied instead.`, 5000, "err");
-      }
-      applyTidy(group);
-    } else {
-      applyMagic(group);
-    }
-  }
+    // the rewrite copies the style of a tidied version of your ink
+    group.tidy = tidyLine(group.paths.map((p) => p.orig), { strength: 0.45 + 0.55 * (settings.neatness / 100) });
+    return group;
+  });
+  fixing += groups.length;
+  updateMagicButton();
+  const results = await Promise.all(groups.map(applyMagic));
+  fixing -= groups.length;
+  updateMagicButton();
+  // a stray mark reads as nothing; only say so when nothing on the page had words
+  if (results.every((r) => r === "empty")) card("I couldn't find any words in that, so I left it as you wrote it.", 4000);
 }
 
-function applyTidy(group) {
-  group.mode = "tidy";
-  const targets = group.tidy.strokes;
-  const words = group.paths.map((p) => bbox(p.orig).minX);
-  const minX = Math.min(...words), span = Math.max(1, Math.max(...words) - minX);
-  group.paths.forEach((p, i) => {
-    const from = p.orig, to = targets[i];
-    const delay = ((words[i] - minX) / span) * 260;
-    tween(700, (k) => {
-      p.pts = from.map((a, j) => ({ ...a, x: a.x + (to[j].x - a.x) * k, y: a.y + (to[j].y - a.y) * k }));
-      p.bbox = null;
-    }, { delay, ease: easeInOut, done: () => { p.state = "done"; sparkle(p.pts, 4, 0.6); } });
-  });
-  history.push({ type: "fix", group });
+function updateMagicButton() {
+  $("magic").classList.toggle("busy", fixing > 0);
+  $("magic").textContent = fixing > 0 ? "✨ Fixing…" : "✨ Magic";
 }
 
 async function applyMagic(group) {
@@ -326,23 +311,23 @@ async function applyMagic(group) {
     res = await r.json();
     if (!r.ok) throw new Error(res.error || r.statusText);
   } catch (err) {
-    group.paths.forEach((p) => (p.shimmer = false));
-    card(`Couldn't rewrite that (${err.message}). Tidied it instead.`, 5000, "err");
-    applyTidy(group);
-    return;
+    // left as written, and still pending: press Magic to try again
+    group.paths.forEach((p) => { p.shimmer = false; p.state = "pending"; });
+    card(`Couldn't rewrite that (${esc(err.message)}). Press ✨ Magic to try again.`, 5000, "err");
+    return "error";
   }
   group.paths.forEach((p) => (p.shimmer = false));
   const line = res.lines[0];
-  if (group.paths.some((p) => p.state === "reverted")) return;   // undone while we waited
+  if (group.paths.some((p) => p.state === "reverted")) return "undone";   // undone while we waited
   if (!line.strokes.length) {
-    card("I couldn't find any words in that, so I left it as you drew it.", 4000);
     group.paths.forEach((p) => (p.state = "done"));
-    return;
+    return "empty";
   }
   const placed = placeSynth(line.strokes, group, line);
   revealMagic(group, placed);
   showResultCard(line);
   history.push({ type: "fix", group });
+  return "fixed";
 }
 
 // Scale/position the normalised synthesised ink onto the page, wrapping words
@@ -463,12 +448,7 @@ function clearAll() {
   requestRender();
 }
 
-document.querySelectorAll("#mode button").forEach((b) => b.addEventListener("click", () => {
-  document.querySelectorAll("#mode button").forEach((x) => x.classList.toggle("on", x === b));
-  settings.mode = b.dataset.mode;
-  $("styleCtl").classList.toggle("disabled", settings.mode !== "magic");
-  $("spellCtl").classList.toggle("disabled", settings.mode !== "magic");
-}));
+$("magic").addEventListener("click", runMagic);
 $("neatness").addEventListener("input", (e) => (settings.neatness = +e.target.value));
 $("spelling").addEventListener("change", (e) => (settings.spelling = e.target.checked));
 $("style").addEventListener("change", (e) => (settings.style = e.target.value === "mine" ? "mine" : +e.target.value));
@@ -485,7 +465,7 @@ $("clear").addEventListener("click", clearAll);
 window.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); }
   if (e.code === "Space" && !e.repeat && e.target === document.body) { e.preventDefault(); setCompare(true); }
-  if (e.key === "Enter") { clearTimeout(idleTimer); processPending(); }
+  if (e.key === "Enter") runMagic();
 });
 window.addEventListener("keyup", (e) => { if (e.code === "Space") setCompare(false); });
 
@@ -502,20 +482,20 @@ async function pollStatus() {
   st.classList.toggle("ready", !serverInfo.loading && !!serverInfo.reader);
   st.classList.toggle("error", !serverInfo.loading && !serverInfo.reader);
   const pct = serverInfo.progress != null ? ` (${Math.round(serverInfo.progress * 100)}%)` : "";
-  $("statusText").textContent = serverInfo.loading ? `${serverInfo.phase || "Loading models"}…${pct} · Tidy works already`
+  $("statusText").textContent = serverInfo.loading ? `${serverInfo.phase || "Loading models"}…${pct}`
     : serverInfo.reader ? `Ready · ${serverInfo.reader}`
-    : serverInfo.error ? `Magic unavailable: ${serverInfo.error}` : "Reader off (--reader none) · Tidy only";
+    : serverInfo.error ? `Magic unavailable: ${serverInfo.error}` : "Reader off (--reader none)";
   if (serverInfo.loading || !reachable) setTimeout(pollStatus, reachable ? 1500 : 3000);
 }
 
 // hooks for automated tests
 window.__hw = {
-  settings, get paths() { return paths; }, processPending,
+  settings, get paths() { return paths; }, runMagic,
   get busy() { return paths.some((p) => p.state === "busy") || tweens.length > 0; },
 };
 
 if (matchMedia("(pointer: coarse)").matches) {
-  $("hint").textContent = "Write something with your finger or an Apple Pencil. Pause, and watch.";
+  $("hint").textContent = "Write something with your finger or an Apple Pencil, then tap ✨ Magic.";
 }
 resize();
 pollStatus();

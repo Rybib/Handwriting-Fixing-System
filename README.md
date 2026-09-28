@@ -1,6 +1,6 @@
 # Rytability Handwriting Magic (proof of concept)
 
-Write with a mouse, a trackpad or an Apple Pencil. When you pause, your scrawl
+Write with a mouse, a trackpad or an Apple Pencil, then press **✨ Magic**. Your scrawl
 shimmers, dissolves into sparkles, and the same sentence writes itself back in.
 It comes back **neat, spelled correctly, and still in your handwriting**.
 
@@ -22,14 +22,14 @@ cd Handwriting-Fixing-System
 After that, just double-click **Launch Handwriting Magic.command** in the folder.
 If anything goes wrong, the launcher saves everything it printed to
 `logs/last-run.log`, and `./run.sh --reset` rebuilds the Python environment
-from scratch. If the AI packages can't be installed, it still starts, in
-Tidy-only mode.
+from scratch. If the AI packages can't be installed, it still starts, as a
+plain drawing page.
 
 The first run sets up a Python environment, installs PyTorch and Transformers
 (about 1 GB), then downloads the models: the handwriting reader (Qwen3-VL-2B,
 about 4.5 GB) and the 43 MB handwriting synthesiser. The Terminal and the status in
-the bottom-right corner of the page show the download's progress; the page
-works in Tidy mode meanwhile. After that, `./run.sh` opens the demo
+the bottom-right corner of the page show the download's progress; you can
+write meanwhile, and press Magic once the dot turns green. After that, `./run.sh` opens the demo
 in your browser within a few seconds, normally at `http://127.0.0.1:8765`. If
 another program is using that port, it takes the next free one. It needs Python 3.10 or newer. If it
 can't find one, it installs [uv](https://docs.astral.sh/uv/), which fetches
@@ -47,15 +47,12 @@ Xcode project that runs this same page with the whole pipeline on the device
 
 | | |
 |---|---|
-| **✨ Magic** | Reads what you wrote, works out what you meant, fixes the spelling, and rewrites it neatly in your handwriting |
-| **Tidy** | Keeps your exact letters. It straightens the baseline and evens out letter size, slant and word spacing. This is instant and needs no AI model |
-| **Off** | Plain ink, smoothed live by the Ink Stroke Modeler |
-| **Neatness** | How strongly the ink is regularised (the synthesiser's sampling bias, or how hard Tidy corrects) |
+| **✨ Magic / Enter** | Reads everything written since the last press, works out what you meant, fixes the spelling, and rewrites it neatly in your handwriting. Nothing changes until you press it, so it never rewrites a sentence you're still in the middle of |
+| **Neatness** | How neat the rewrite is (the synthesiser's sampling bias) |
 | **Style** | *My handwriting* copies your style, and switches to *Tall narrow print* for any line where the copy reads worse; the card under the page says so. The 13 named styles, from *Clean print* to *Flowing cursive*, are other writers from the training data |
 | **Fix spelling** | Off: Magic rewrites exactly what you wrote, just neater |
 | **👁 / hold Space** | Shows what you originally wrote |
 | **↶ / ⌘Z** | Undoes the last stroke or the last fix |
-| **Enter** | Runs the magic now, without waiting for the pause |
 
 ## How it works
 
@@ -65,9 +62,9 @@ Xcode project that runs this same page with the whole pipeline on the device
         ▼
  ① Ink Stroke Modeler (JS port)         live: spring-mass pen model + wobble smoothing
         │                                → smooth, low-latency, variable-width ink
-        ▼  (pause ~1 s)
- ② Line + word segmentation, Tidy        pure geometry, instant
-        │                                (Tidy mode stops here and morphs the ink)
+        ▼  (press ✨ Magic)
+ ② Line + word segmentation, tidying     pure geometry, instant: the tidied ink is
+        │                                the style sample for ④
         ▼
  ③ Reader: Qwen3-VL-2B (local)           one pass returns (with macOS Vision's literal
         │                                reading as a second opinion)
@@ -150,8 +147,7 @@ Both use Qwen3-VL-2B. (Qwen3-VL-4B got 11/12 and 8/12, at 2.7 s a line.)
 
 The remaining misses are the reader's: a near-illegible scribble ("thank
 youreverywhere"), "homwork" (drawn as "hanwak") read as "handle", and
-"favoril food" as "fruit food". Loading takes about 10 s from the cache; Tidy
-mode is instant.
+"favoril food" as "fruit food". Loading takes about 10 s from the cache.
 
 Benchmarks and test tooling are in `tests/`: `make_evalset.py`,
 `eval_pipeline.py` (the numbers above), `eval_legibility.py`, and
@@ -185,8 +181,9 @@ node tests/test_tidy.mjs
    Gemma 3 / Apple Foundation Models text pipeline for MEANT. This is the same
    job as Improve, with a prompt aimed at handwriting.
 3. **Rewrite:** convert `server/synth.py` to Core ML or MLX. It's only an LSTM
-   with 3.6M parameters, and priming uses the `PKStroke` points. Tidy mode is
-   about 200 lines of geometry, which ports easily to Swift.
+   with 3.6M parameters, and priming uses the `PKStroke` points. (Done: the
+   iPhone/iPad app in `~/Desktop/HandwritingMagic-iOS` runs it in Swift.) The
+   tidying that prepares the style sample is about 200 lines of geometry.
 4. **Licensing (important before shipping):** the pretrained synthesis weights come
    from a repo with **no licence**, and were trained on **IAM-OnDB**, which is
    licensed for non-commercial research only. That's fine for a proof of concept.
