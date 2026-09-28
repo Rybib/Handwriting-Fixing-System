@@ -38,6 +38,30 @@ def test_synthesis_and_priming():
     assert info[0]["prime_aligned"], info
 
 
+def test_trim_keeps_only_the_text():
+    from synth import _trim
+    # pen positions (x, y, pen lifts after this point) and the character attended to at each
+    pts = [(0, 9, 0), (1, 9, 1),                 # still finishing the priming sample (chars < 5)
+           (2, 0, 0), (6, 4, 0), (10, 0, 1),     # the text (chars 5-9)
+           (7, 3, 0), (12, 3, 1),                # after the last letter, back over it: a t-bar
+           (20, 0, 0), (24, 4, 1)]               # after the last letter, further right: junk
+    att = [3, 4, 5, 7, 9, 10, 10, 11, 11]
+    xy = np.array(pts, np.float32)
+    off = np.concatenate([xy[:1], np.column_stack([np.diff(xy[:, :2], axis=0), xy[1:, 2]])])
+    assert _trim(list(off), att, 5, 10)[:, 0].tolist() == [2, 6, 10, 7, 12]
+
+
+def test_pick_prefers_the_version_that_reads_back():
+    import app
+    line = np.array([[0, 0, 0], [5, 3, 0], [10, 0, 1]], np.float32)
+    cands = [{"coords": line, "score": s} for s in (0, 1, 2)]
+    readings = iter(["hellp", "hello", "never read"])
+    best = app.pick(cands, "hello", lambda img: next(readings), limit=3)
+    assert best is cands[1] and best["cer"] == 0 and "cer" not in cands[2]
+    # without a proofreader, a poor attention score counts as a misreading
+    assert app.pick([{"coords": line, "score": 7}, {"coords": line, "score": 9}], "hi", None, 2)["score"] == 7
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

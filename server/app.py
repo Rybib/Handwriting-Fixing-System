@@ -37,7 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from ink import body_metrics, render_strokes  # noqa: E402
-from recognize import build_reader, cer, word_corrections  # noqa: E402
+from recognize import build_proofreader, build_reader, cer, default_vlm, word_corrections  # noqa: E402
 from synth import MAX_CHARS, HandwritingSynth, sanitize, user_strokes_to_prime  # noqa: E402
 from weights import STYLES_DIR, ensure_weights  # noqa: E402
 
@@ -46,11 +46,7 @@ FALLBACK_STYLE = 9
 WORK_LOCK = threading.Lock()
 
 STATE = {"synth": None, "reader": None, "reader_desc": None, "reader_error": None, "loading": True,
-         "phase": "Starting", "dl": None}
-
-
-def reader_model_id():
-    return os.environ.get("HWFIX_VLM", "Qwen/Qwen3-VL-2B-Instruct")
+         "phase": "Starting", "dl": None, "proof": None, "proof_fast": False}
 
 
 def _dir_bytes(path):
@@ -151,7 +147,7 @@ def load_models(reader_kind):
         STATE["reader_error"] = f"synthesis model failed: {e}"
     if reader_kind != "none":
         try:
-            download_reader(reader_model_id())
+            download_reader(default_vlm())
             STATE["phase"] = "Loading the handwriting reader into memory"
             print(f"[models] loading reader '{reader_kind}' ...")
             t = time.time()
@@ -167,6 +163,12 @@ def load_models(reader_kind):
             traceback.print_exc()
             STATE["reader"] = None
             STATE["reader_error"] = f"{type(e).__name__}: {e}"
+        STATE["proof"], STATE["proof_fast"] = build_proofreader(STATE["reader"])
+        if STATE["proof_fast"]:
+            hint = getattr(STATE["reader"], "name", "") == "vlm"
+            if hint:
+                STATE["reader"].ocr = STATE["proof"]
+            print("[models] macOS Vision proofreads the rewrites" + (" and gives the reader a second opinion" if hint else ""))
     STATE["loading"] = False
     STATE["phase"] = "Ready"
     print("[models] all loaded - go write something!")
@@ -202,6 +204,23 @@ def normalise_output(coords):
     return [((s - [x0, base]) / core) for s in strokes]
 
 
+def pick(cands, text, proof, limit):
+    """The candidate that reads back best (then the best attention score).
+
+    Candidates come sorted by attention score, so the first one that reads back
+    perfectly wins. Without a proofreader, a poor attention score (a skipped
+    letter, or the pen never lifting at the end) counts as a misreading.
+    """
+    best = None
+    for c in cands[:limit]:
+        c["cer"] = cer(proof(render_strokes(to_strokes(c["coords"]))), text) if proof else float(c["score"] >= 6)
+        if best is None or c["cer"] < best["cer"]:
+            best = c
+        if c["cer"] == 0:
+            break
+    return best
+
+
 def rewrite(req):
     synth, reader = STATE["synth"], STATE["reader"]
     if synth is None:
@@ -209,7 +228,7 @@ def rewrite(req):
     style = req.get("style", "mine")
     bias = float(req.get("bias", 1.5))
     fix = bool(req.get("fix_spelling", True))
-    n_cand = int(req.get("candidates", 3))
+    n_cand = int(req.get("candidates", 8))
     verify = bool(req.get("verify", True))
     out = []
     for line in req["lines"]:
@@ -238,28 +257,29 @@ def rewrite(req):
             mine_prime = user_strokes_to_prime(prime_ink, written_s[:MAX_CHARS])
 
         t1 = time.time()
+        proof = STATE["proof"] if verify else None
+        limit = n_cand if STATE["proof_fast"] else 2      # a VLM proofreader is slow
         if mine_prime is None:
-            coords = synth.write(chunks, bias=bias, primes=[safe_prime] * n, n_candidates=n_cand)
+            _, info = synth.write(chunks, bias=bias, primes=[safe_prime] * n, n_candidates=n_cand, return_info=True)
+            coords = [pick(inf["candidates"], c, proof, limit)["coords"] for inf, c in zip(info, chunks)]
             style_used = FALLBACK_STYLE if style == "mine" else style
         else:
             # One batch: the user's own style AND a clean built-in style as a safety net.
-            coords_all, info = synth.write(chunks + chunks, bias=bias, primes=[mine_prime] * n + [safe_prime] * n,
-                                           n_candidates=n_cand, return_info=True)
-            coords, style_used = coords_all[:n], "mine"
-            for i in range(n):
+            _, info = synth.write(chunks + chunks, bias=bias, primes=[mine_prime] * n + [safe_prime] * n,
+                                  n_candidates=n_cand, return_info=True)
+            coords, style_used = [], "mine"
+            for i, chunk in enumerate(chunks):
                 # Copying the user's style only works if their ink is legible and the
                 # network could line it up with its transcript; otherwise it faithfully
-                # copies the mess. Check the attention, then have the reader proofread,
-                # and fall back to the clean built-in style when it reads worse.
-                ok = info[i]["prime_aligned"] and info[i]["score"] < 6
-                if ok and verify and reader is not None:
-                    e_mine = cer(reader.read_literal(render_strokes(to_strokes(coords[i]))), chunks[i])
-                    if e_mine > 0.05:
-                        e_safe = cer(reader.read_literal(render_strokes(to_strokes(coords_all[n + i]))), chunks[i])
-                        ok = e_mine <= e_safe
-                        print(f"[verify] {chunks[i]!r}: mine cer={e_mine:.2f} safe cer={e_safe:.2f}")
-                if not ok:
-                    coords[i], style_used = coords_all[n + i], FALLBACK_STYLE
+                # copies the mess. So the versions are proofread, and the clean
+                # built-in style is used unless the user's own reads at least as well.
+                mine = pick(info[i]["candidates"], chunk, proof, limit) if info[i]["prime_aligned"] else None
+                if mine is None or mine["cer"] > 0:
+                    safe = pick(info[n + i]["candidates"], chunk, proof, limit)
+                    print(f"[verify] {chunk!r}: mine cer={mine['cer'] if mine else 1:.2f} safe cer={safe['cer']:.2f}")
+                    if mine is None or safe["cer"] < mine["cer"]:
+                        mine, style_used = safe, FALLBACK_STYLE
+                coords.append(mine["coords"])
         t_synth = time.time() - t1
 
         # stitch chunks into one long line; the browser wraps it to the page width

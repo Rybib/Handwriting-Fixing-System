@@ -177,10 +177,12 @@ class HandwritingSynth:
                       (the RNN occasionally skips or garbles a letter; this is a
                       cheap way to catch that without a second recogniser pass).
         returns list of coords arrays [N,3] (x, y-up, eos), denoised + aligned
-        (and, with return_info, a list of {"score", "prime_aligned"} per line:
-        prime_aligned is False when the attention did NOT end the priming pass
-        near the end of the prime transcript, i.e. the ink and its transcript
-        disagree and the output is likely garbage)
+        (and, with return_info, a list of {"score", "prime_aligned", "candidates"}
+        per line: prime_aligned is False when the attention did NOT end the
+        priming pass near the end of the prime transcript, i.e. the ink and its
+        transcript disagree and the output is likely garbage; candidates holds
+        all n_candidates versions as {"coords", "score"}, best score first, so
+        the caller can pick with a recogniser)
         """
         rng = np.random.default_rng(seed)
         n_lines = len(lines)
@@ -192,14 +194,16 @@ class HandwritingSynth:
         bias = np.repeat(biases, K).astype(np.float32)
         B = len(lines_k)
 
+        # The trailing space gives the pen its usual end-of-word moment to cross the
+        # last t and dot the last i. Whatever it writes after that is trimmed.
         char_seqs, prime_seqs, text_start = [], [], []
         for text, p in zip(lines_k, primes_k):
             if p is not None:
-                char_seqs.append(encode(p[1] + " " + text))
+                char_seqs.append(encode(p[1] + " " + text + " "))
                 prime_seqs.append(p[0])
                 text_start.append(len(p[1]) + 1)
             else:
-                char_seqs.append(encode(text))
+                char_seqs.append(encode(text + " "))
                 prime_seqs.append(np.zeros((0, 3), np.float32))
                 text_start.append(0)
 
@@ -235,6 +239,7 @@ class HandwritingSynth:
         inp[~has_prime] = np.array([0, 0, 1], np.float32)
         max_steps = max_steps_per_char * max(len(t) for t in lines) + 20
         outs = [[] for _ in range(B)]
+        att = [[] for _ in range(B)]        # attended character for every point
         dwell = np.zeros((B, U + 1), np.int32)
         done = np.zeros(B, bool)
         natural = np.zeros(B, bool)
@@ -246,6 +251,7 @@ class HandwritingSynth:
             char_idx = np.argmax(st["phi"], axis=1)
             for b in np.where(~done)[0]:
                 outs[b].append(nxt[b])
+                att[b].append(char_idx[b])
                 dwell[b, char_idx[b]] += 1
             # termination: attention has reached the end-of-text token and the pen lifts
             eos_probe = rng.random(B) < e
@@ -258,23 +264,48 @@ class HandwritingSynth:
 
         results, infos = [], []
         for li in range(n_lines):
-            best, best_score = None, None
+            cands = []
             for b in range(li * K, li * K + K):
                 text = lines_k[b]
                 d = dwell[b, text_start[b]: text_start[b] + len(text)]
                 letters = np.array([c != " " for c in text])
                 skipped = int(np.sum((d < 2) & letters))
                 score = skipped * 2 + (0 if natural[b] else 6) + int(np.sum(d > 5 * max(1, np.median(d[letters]) if letters.any() else 1)))
-                if best_score is None or score < best_score:
-                    best, best_score = b, score
-            off = np.array(outs[best], np.float32) if outs[best] else np.zeros((1, 3), np.float32)
-            off[-1, 2] = 1.0
-            coords = offsets_to_coords(off)
-            coords = denoise(coords)
-            coords[:, :2] = align(coords[:, :2])
-            results.append(coords)
-            infos.append({"score": int(best_score), "prime_aligned": bool(prime_aligned[best])})
+                coords = _trim(outs[b], att[b], text_start[b], text_start[b] + len(text))
+                coords = denoise(coords)
+                coords[:, :2] = align(coords[:, :2])
+                cands.append({"coords": coords, "score": score})
+            cands.sort(key=lambda c: c["score"])        # stable: ties keep sampling order
+            results.append(cands[0]["coords"])
+            infos.append({"score": int(cands[0]["score"]), "prime_aligned": bool(prime_aligned[li * K]),
+                          "candidates": cands})
         return (results, infos) if return_info else results
+
+
+def _trim(outs, att, start, end):
+    """Offsets of one sample -> coords of only the strokes that write the text.
+
+    Right after priming the pen sometimes finishes the *sample* first (dots its
+    last i), which shows up as a stray mark before the first word: strokes
+    drawn before the attention reaches the text are dropped. After the last
+    letter, strokes that go back over the words (a crossbar, an i-dot) are
+    kept; anything that starts further right is the pen running on.
+    """
+    off = np.array(outs, np.float32) if outs else np.zeros((1, 3), np.float32)
+    off[-1, 2] = 1.0
+    att = np.array(att if outs else [start])
+    coords = offsets_to_coords(off)
+    ends = np.where(off[:, 2] == 1)[0] + 1
+    strokes = list(zip(np.concatenate([[0], ends[:-1]]), ends))
+    while len(strokes) > 1 and (att[strokes[0][0]:strokes[0][1]] < start).all():
+        strokes.pop(0)
+    after = [(a, b) for a, b in strokes if (att[a:b] >= end).all()]
+    written = [(a, b) for a, b in strokes if (a, b) not in after]
+    if written:
+        right = max(coords[a:b, 0].max() for a, b in written)
+        strokes = written + [(a, b) for a, b in after if coords[a:b, 0].min() < right]
+        strokes.sort()
+    return np.concatenate([coords[a:b] for a, b in strokes])
 
 
 # ----------------------------------------------------------------------------

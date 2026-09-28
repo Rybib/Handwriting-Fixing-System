@@ -1,7 +1,7 @@
 """Reading the handwriting, and working out what the writer meant.
 
 Readers (pick with --reader):
-  vlm    Qwen3-VL (default Qwen/Qwen3-VL-2B-Instruct). One pass reads the ink
+  vlm    Qwen3-VL (4B with 16 GB+ of RAM, else 2B; HWFIX_VLM overrides). One pass reads the ink
          literally AND infers the intended, correctly spelled sentence, using
          both the pixels and language context. Runs on-device (Apple Silicon
          GPU via MPS, or CPU).
@@ -25,6 +25,11 @@ PROMPT = (
     "MEANT: <the same words spelled correctly. Fix misspellings and wrong homophones (their/there, to/too, "
     "your/you're) from context. Keep the same words in the same order; do not add or remove words>"
 )
+
+# A literal OCR reading (macOS Vision) as a second opinion. On messy lines drawn
+# in the browser it took Qwen3-VL-2B from 14 to 18 of 24 intended sentences
+# right; 4B was unchanged at 19 (tests/make_evalset.py, raw and browser ink).
+OCR_HINT = "\nA separate OCR engine read the line as: \"{ocr}\". It is often wrong about single letters, so trust the image."
 
 LITERAL_PROMPT = "Transcribe this handwriting exactly, letter by letter. Reply with only the text."
 
@@ -55,6 +60,19 @@ def _parse(reply):
     return written.strip(' "'), meant.strip(' "')
 
 
+def default_vlm():
+    """Qwen3-VL-4B reads messy handwriting better than 2B (the intended sentence
+    on 11 vs 7 of the 12 tests/make_evalset.py lines, 8 vs 7 when drawn in the
+    browser) but needs ~9 GB, so it is the default only with 16 GB+ of RAM."""
+    if os.environ.get("HWFIX_VLM"):
+        return os.environ["HWFIX_VLM"]
+    try:
+        ram = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (AttributeError, ValueError, OSError):
+        ram = 0
+    return "Qwen/Qwen3-VL-4B-Instruct" if ram >= 15.5e9 else "Qwen/Qwen3-VL-2B-Instruct"
+
+
 class VLMReader:
     name = "vlm"
 
@@ -62,7 +80,7 @@ class VLMReader:
         import torch
         from transformers import AutoProcessor
 
-        self.model_id = model_id or os.environ.get("HWFIX_VLM", "Qwen/Qwen3-VL-2B-Instruct")
+        self.model_id = model_id or default_vlm()
         if torch.backends.mps.is_available():
             self.device, dtype = "mps", torch.bfloat16
         elif torch.cuda.is_available():
@@ -71,6 +89,7 @@ class VLMReader:
             self.device, dtype = "cpu", torch.float32
             torch.set_num_threads(max(1, os.cpu_count() or 1))
         self.torch = torch
+        self.ocr = None         # optional literal OCR function, see OCR_HINT
         self.processor = AutoProcessor.from_pretrained(self.model_id)
         self.lock = threading.Lock()
         self._load(dtype)
@@ -96,7 +115,9 @@ class VLMReader:
         return self.processor.batch_decode(out[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0]
 
     def read(self, image):
-        return _parse(self._generate([{"type": "image", "image": image}, {"type": "text", "text": PROMPT}]))
+        ocr = self.ocr(image) if self.ocr else ""
+        prompt = PROMPT + (OCR_HINT.format(ocr=ocr) if ocr else "")
+        return _parse(self._generate([{"type": "image", "image": image}, {"type": "text", "text": prompt}]))
 
     def read_literal(self, image):
         return self._generate([{"type": "image", "image": image}, {"type": "text", "text": LITERAL_PROMPT}], 60).strip()
@@ -195,6 +216,23 @@ def word_corrections(written, meant):
         if op != "equal":
             out.append([" ".join(a[i1:i2]), " ".join(b[j1:j2])])
     return out
+
+
+def build_proofreader(reader):
+    """A strict, literal reader for checking the rewritten ink: (read(image), fast).
+
+    macOS Vision reads exactly what is on the page in ~40 ms and is independent
+    of the VLM, which tends to read *through* small glitches in the output.
+    Elsewhere the VLM reads literally (slower, so fewer candidates are checked).
+    """
+    if platform.system() == "Darwin":
+        try:
+            return AppleVisionReader().recognize, True
+        except Exception as e:  # noqa: BLE001
+            print(f"[reader] macOS Vision unavailable for proofreading ({e})")
+    if reader is not None:
+        return reader.read_literal, False
+    return None, False
 
 
 def build_reader(kind="vlm"):
