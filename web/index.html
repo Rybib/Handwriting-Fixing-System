@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Rytability Handwriting Magic</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23007aff'/%3E%3Ctext x='16' y='23' font-size='18' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="paper"></canvas>
+
+  <header class="brand">
+    <div class="logo">R</div>
+    <div>
+      <div class="title">Handwriting Magic</div>
+      <div class="subtitle">Rytability prototype</div>
+    </div>
+  </header>
+
+  <nav class="toolbar" id="toolbar">
+    <div class="seg" id="mode" role="radiogroup" aria-label="Mode">
+      <button data-mode="magic" class="on" title="Read it, fix spelling, rewrite it neatly in your handwriting">✨ Magic</button>
+      <button data-mode="tidy" title="Keep your exact letters, just straighten and even them out">Tidy</button>
+      <button data-mode="off" title="Plain ink, no fixing">Off</button>
+    </div>
+    <div class="sep"></div>
+    <label class="ctl" title="How neat the rewrite should be">
+      <span>Neatness</span>
+      <input type="range" id="neatness" min="0" max="100" value="60">
+    </label>
+    <label class="ctl" id="styleCtl" title="Whose handwriting to rewrite in">
+      <span>Style</span>
+      <select id="style">
+        <option value="mine" selected>My handwriting</option>
+      </select>
+    </label>
+    <label class="ctl toggle" id="spellCtl" title="Fix spelling while rewriting">
+      <input type="checkbox" id="spelling" checked>
+      <span>Fix spelling</span>
+    </label>
+    <div class="sep"></div>
+    <button class="icon" id="compare" title="Hold to see what you actually wrote (or hold Space)">👁</button>
+    <button class="icon" id="undo" title="Undo (⌘Z)">↶</button>
+    <button class="icon" id="clear" title="Clear the page">✕</button>
+  </nav>
+
+  <div class="hint" id="hint">Write something with your mouse, trackpad or Apple Pencil. Pause, and watch.</div>
+
+  <aside class="transcript" id="transcript" aria-live="polite"></aside>
+
+  <footer class="status" id="status"><span class="dot"></span><span id="statusText">Connecting…</span></footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
