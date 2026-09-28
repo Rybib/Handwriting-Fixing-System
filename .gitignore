@@ -1,0 +1,7 @@
+# the reader is 1.7 GB: scripts/get_model.sh puts it back
+HandwritingMagic/Qwen3VLModel.bundle/
+xcuserdata/
+*.xcuserstate
+build/
+DerivedData/
+.DS_Store
