@@ -64,13 +64,38 @@ def _dir_bytes(path):
     return total
 
 
+def byte_counter(dl):
+    """A tqdm class for snapshot_download that records bytes instead of drawing bars.
+
+    huggingface_hub hides its own download bars when stderr is not a terminal, and
+    run.sh pipes everything into logs/last-run.log, so a first-run download of
+    several GB used to print nothing at all and looked like a hang.
+    """
+    from tqdm.auto import tqdm
+
+    sink = open(os.devnull, "w")
+
+    class ByteCounter(tqdm):
+        def __init__(self, *a, **kw):
+            kw.update(disable=False, file=sink)
+            super().__init__(*a, **kw)
+
+        def update(self, n=1):
+            shown = super().update(n)
+            if self.unit == "B":
+                dl["bars"][id(self)] = self.n
+            return shown
+
+    return ByteCounter
+
+
 def download_reader(model_id):
-    """Fetch the reader's files up front so the page can show real progress."""
+    """Fetch the reader's files up front, reporting progress to the page and the Terminal."""
     from huggingface_hub import HfApi, snapshot_download
     from huggingface_hub.constants import HF_HUB_CACHE
 
     cache_dir = os.path.join(HF_HUB_CACHE, "models--" + model_id.replace("/", "--"))
-    dl = {"dir": cache_dir, "total": 4.3e9, "last": -1, "last_t": time.time(), "stalled": False}
+    dl = {"dir": cache_dir, "total": 4.3e9, "bars": {}, "last": -1, "last_t": time.time()}
     try:
         info = HfApi().model_info(model_id, files_metadata=True)
         dl["total"] = float(sum((f.size or 0) for f in info.siblings)) or dl["total"]
@@ -78,12 +103,23 @@ def download_reader(model_id):
         print(f"[models] could not query model size ({e})")
     STATE["dl"] = dl
     STATE["phase"] = "Downloading the handwriting reader"
-    print(f"[models] downloading {model_id} ({dl['total'] / 1e9:.1f} GB) to {cache_dir}")
+    done, t0 = threading.Event(), time.time()
+
+    def report():      # silent if the files are already cached (that takes ~1 s)
+        while not done.wait(5):
+            text, frac = status_phase()
+            print(f"[models] {model_id}: {text} ({frac or 0:.0%})")
+
+    threading.Thread(target=report, daemon=True).start()
     try:
-        snapshot_download(model_id)
+        snapshot_download(model_id, tqdm_class=byte_counter(dl))
+        if time.time() - t0 > 5:
+            print(f"[models] download finished in {time.time() - t0:.0f}s")
     except Exception as e:  # noqa: BLE001
         print(f"[models] download problem ({e}); trying whatever is cached")
-    STATE["dl"] = None
+    finally:
+        done.set()
+        STATE["dl"] = None
 
 
 def status_phase():
@@ -91,7 +127,9 @@ def status_phase():
     dl = STATE["dl"]
     if not dl:
         return STATE["phase"], None
-    have = _dir_bytes(dl["dir"])
+    # bytes from huggingface_hub's progress callbacks; the folder size is a fallback
+    # for versions that only report whole files
+    have = max([_dir_bytes(dl["dir"])] + list(dl["bars"].values()))
     now = time.time()
     if have != dl["last"]:
         dl["last"], dl["last_t"] = have, now
@@ -315,8 +353,11 @@ def main():
     ap.add_argument("--lan", action="store_true", help="listen on the network so an iPad can connect")
     ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args()
+    # run.sh pipes the output through tee; without this, print() is block-buffered
+    # and logs/last-run.log stops minutes behind what the server is doing
+    sys.stdout.reconfigure(line_buffering=True)
 
-    host = "0.0.0.0" if args.lan else "127.0.0.1"
+    host ="0.0.0.0" if args.lan else "127.0.0.1"
     httpd = None
     for port in range(args.port, args.port + 20):
         url = f"http://127.0.0.1:{port}"
