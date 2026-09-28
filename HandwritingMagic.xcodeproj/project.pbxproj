@@ -185,7 +185,7 @@
 			packageReferences = (
 				A10000000000000000000A01 /* XCLocalSwiftPackageReference "../Files/App Work/dependencies/mlx-swift-lm" */,
 				A10000000000000000000A02 /* XCLocalSwiftPackageReference "../Files/App Work/dependencies/swift-transformers" */,
-				A10000000000000000000A03 /* XCRemoteSwiftPackageReference "google-mlkit-swiftpm" */,
+				A10000000000000000000A03 /* XCLocalSwiftPackageReference "../Files/App Work/dependencies/google-mlkit-swiftpm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A10000000000000000000002 /* Products */;
@@ -426,18 +426,11 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "../Files/App Work/dependencies/swift-transformers";
 		};
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		A10000000000000000000A03 /* XCRemoteSwiftPackageReference "google-mlkit-swiftpm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/d-date/google-mlkit-swiftpm";
-			requirement = {
-				kind = exactVersion;
-				version = 9.0.2;
-			};
+		A10000000000000000000A03 /* XCLocalSwiftPackageReference "../Files/App Work/dependencies/google-mlkit-swiftpm" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../Files/App Work/dependencies/google-mlkit-swiftpm";
 		};
-/* End XCRemoteSwiftPackageReference section */
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		A10000000000000000000201 /* MLXVLM */ = {
@@ -457,7 +450,7 @@
 		};
 		A10000000000000000000204 /* MLKitDigitalInkRecognition */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000A03 /* XCRemoteSwiftPackageReference "google-mlkit-swiftpm" */;
+			package = A10000000000000000000A03 /* XCLocalSwiftPackageReference "../Files/App Work/dependencies/google-mlkit-swiftpm" */;
 			productName = MLKitDigitalInkRecognition;
 		};
 		A10000000000000000000211 /* MLXVLM */ = {

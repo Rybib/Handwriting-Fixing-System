@@ -30,7 +30,9 @@ Kit's English model (Google's files, fetched from dl.google.com), and the
 synthesiser's weights (they come from a repo with no licence and were trained
 on IAM-OnDB, which is for non-commercial research only, so each machine
 fetches its own copy, as the Mac demo does). The Xcode project also expects
-Rytability's vendored packages at `~/Desktop/Files/App Work/dependencies`.
+the vendored packages at `~/Desktop/Files/App Work/dependencies`: Rytability's
+(mlx-swift-lm, swift-transformers and theirs) plus the frozen ML Kit and its
+five Google packages.
 
 ## Run it on your iPhone or iPad
 
@@ -86,9 +88,13 @@ server on the Mac, so both run the same `web/`. The Swift engine is a port of
 or the clean *Tall narrow print* style, whichever reads back better" rule, 8
 candidates of each, proofread by Vision.
 
-ML Kit comes from [d-date/google-mlkit-swiftpm](https://github.com/d-date/google-mlkit-swiftpm)
-9.0.2, a community Swift Package of Google's ML Kit binaries (Google only
-publishes it for CocoaPods). It needs `-ObjC -all_load` in Other Linker Flags
+ML Kit is **frozen**: a local copy in `~/Desktop/Files/App Work/dependencies/google-mlkit-swiftpm`,
+trimmed to Digital Ink, made from [d-date/google-mlkit-swiftpm](https://github.com/d-date/google-mlkit-swiftpm)
+9.0.2 (a community Swift Package of Google's ML Kit binaries; Google only
+publishes it for CocoaPods). Its five Google packages (promises, GoogleDataTransport,
+GoogleUtilities, gtm-session-fetcher, nanopb) are local copies next to it, so
+building fetches nothing and nothing changes unless those folders are replaced
+by hand; `VENDORED.md` there says exactly what's in it. It needs `-ObjC -all_load` in Other Linker Flags
 and `HandwritingMagic/MLKitDigitalInkRecognition_resource.bundle` (the model
 download manifest; without it the download silently never starts).
 
