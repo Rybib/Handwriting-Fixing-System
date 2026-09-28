@@ -21,6 +21,17 @@ const settings = {
   autoDelay: 1100,      // ms of stillness before the magic happens
 };
 
+// The 13 writers the synthesiser learned from (IAM-OnDB), named for how their
+// writing looks. The number is the server's style id; 9 is the clean fallback.
+const STYLE_GROUPS = [
+  ["Print", [[1, "Clean print"], [5, "Big clear print"], [9, "Tall narrow print"], [0, "Casual print"],
+    [3, "Wide round print"], [6, "Airy spaced print"], [8, "Bold rounded print"], [4, "Small italic print"],
+    [12, "Loopy upright print"]]],
+  ["Joined-up", [[7, "Print with a hint of script"], [10, "Bouncy joined script"], [11, "Quick slanted script"],
+    [2, "Flowing cursive"]]],
+];
+const STYLE_NAME = Object.fromEntries(STYLE_GROUPS.flatMap(([, styles]) => styles));
+
 let paths = [];         // everything drawn: {id, kind:'user'|'synth', pts, orig, alpha, reveal, shimmer, state, hidden}
 let history = [];
 let particles = [];
@@ -420,7 +431,7 @@ function showResultCard(line) {
   const fixes = (line.corrections || []).filter(([a, b]) => a.toLowerCase() !== b.toLowerCase());
   // the server only keeps "my handwriting" when the copy reads back as well as a clean style
   const note = settings.style === "mine" && line.style_used !== "mine"
-    ? `<div class="note">Your handwriting was hard to copy neatly here, so I used a clean style.</div>` : "";
+    ? `<div class="note">Your handwriting was hard to copy neatly here, so I used ${STYLE_NAME[line.style_used] ? `the “${STYLE_NAME[line.style_used]}” style` : "a clean style"}.</div>` : "";
   if (fixes.length) {
     const chips = fixes.map(([a, b]) => `<del>${esc(a || "∅")}</del> → <ins>${esc(b || "∅")}</ins>`).join("&nbsp;&nbsp; ");
     card(`<span class="label">Fixed</span>${chips}${note}`, 7000);
@@ -459,7 +470,10 @@ document.querySelectorAll("#mode button").forEach((b) => b.addEventListener("cli
 $("neatness").addEventListener("input", (e) => (settings.neatness = +e.target.value));
 $("spelling").addEventListener("change", (e) => (settings.spelling = e.target.checked));
 $("style").addEventListener("change", (e) => (settings.style = e.target.value === "mine" ? "mine" : +e.target.value));
-for (let i = 0; i < 13; i++) $("style").insertAdjacentHTML("beforeend", `<option value="${i}">Style ${i + 1}</option>`);
+for (const [group, styles] of STYLE_GROUPS) {
+  const options = styles.map(([id, name]) => `<option value="${id}">${name}</option>`).join("");
+  $("style").insertAdjacentHTML("beforeend", `<optgroup label="${group}">${options}</optgroup>`);
+}
 
 const setCompare = (on) => { comparing = on; $("compare").classList.toggle("active", on); requestRender(); };
 $("compare").addEventListener("pointerdown", () => setCompare(true));
