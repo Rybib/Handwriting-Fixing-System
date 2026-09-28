@@ -41,4 +41,18 @@ assert.ok(Math.abs(h(r.strokes[2]) - h(r.strokes[0])) < Math.abs(h(line[2]) - h(
 const two = [...fakeLine(200, 0), ...fakeLine(300, 0), [{ x: 60, y: 160 }, { x: 61, y: 161 }]];
 const lines = groupLines(two.map((pts) => ({ pts })));
 assert.equal(lines.length, 2, "dot should join a line, not become its own");
+
+// Stroke boxes of "can you help me with my homwork" as drawn in the browser. The
+// i-dot of "with" (x 506) used to start a line of its own that then took the
+// tall h/k strokes after it, so the rewrite of half the line landed on top of
+// the other half. Plus a lone descender (the tail of a y), which also used to
+// become a line. Each stroke is its bounding-box diagonal.
+const boxes = [[112, 124, 542, 564], [129, 180, 545, 561], [206, 227, 549, 586], [233, 274, 556, 567],
+  [294, 353, 535, 569], [388, 432, 547, 562], [463, 496, 551, 562], [504, 505, 550, 564], [506, 506, 534, 535],
+  [513, 514, 532, 567], [507, 550, 542, 576], [576, 606, 556, 569], [606, 624, 555, 584], [661, 680, 529, 559],
+  [689, 735, 556, 562], [740, 828, 530, 564], [840, 866, 560, 614]];
+const boxLine = (dy) => boxes.map(([x0, x1, y0, y1]) => ({ pts: [{ x: x0, y: y0 + dy }, { x: x1, y: y1 + dy }] }));
+assert.equal(groupLines(boxLine(0)).length, 1, "an i-dot or a y tail must not split a line");
+const stacked = groupLines([...boxLine(0), ...boxLine(72)]);   // next ruled line
+assert.deepEqual(stacked.map((L) => L.length), [boxes.length, boxes.length], "two ruled lines stay separate");
 console.log("ok tidy tests");

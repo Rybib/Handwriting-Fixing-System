@@ -95,34 +95,64 @@ export function groupLines(strokes) {
   const boxes = strokes.map((s) => bbox(s.pts));
   const hs = boxes.map((b) => b.h).filter((h) => h > 4);
   const h = clamp(median(hs) || 30, 10, 250);
+  // Dots, i-dots, crossbars and connectors ("marks") sit above or between the
+  // letters. Grouping them along with the letters let an i-dot start a line of
+  // its own that then pulled in the next tall letters (h, k, l), splitting one
+  // line in two. So letters are grouped first, and marks join afterwards.
+  const isMark = (b) => b.h < h * 0.35 || Math.max(b.w, b.h) < h * 0.6;
   const lines = [];
+  const newLine = (i) => {
+    const b = boxes[i];
+    lines.push({ idx: [i], cys: [b.cy], cy: b.cy, minY: b.minY, maxY: b.maxY, minX: b.minX, maxX: b.maxX });
+  };
+  const add = (L, i) => {
+    const b = boxes[i];
+    L.idx.push(i);
+    if (!isMark(b)) { L.cys.push(b.cy); L.cy = median(L.cys); }
+    L.minY = Math.min(L.minY, b.minY); L.maxY = Math.max(L.maxY, b.maxY);
+    L.minX = Math.min(L.minX, b.minX); L.maxX = Math.max(L.maxX, b.maxX);
+  };
   boxes.forEach((b, i) => {
+    if (isMark(b)) return;
     let best = null, bestD = Infinity;
     for (const L of lines) {
       const d = Math.abs(b.cy - L.cy);
       const overlap = Math.min(b.maxY, L.maxY) - Math.max(b.minY, L.minY);
       if ((d < h * 0.9 || overlap > Math.min(b.h, L.maxY - L.minY) * 0.5) && d < bestD) { best = L; bestD = d; }
     }
-    if (best) {
-      best.idx.push(i);
-      best.cys.push(b.cy);
-      best.cy = median(best.cys);
-      best.minY = Math.min(best.minY, b.minY); best.maxY = Math.max(best.maxY, b.maxY);
-    } else {
-      lines.push({ idx: [i], cys: [b.cy], cy: b.cy, minY: b.minY, maxY: b.maxY });
-    }
+    if (best) add(best, i); else newLine(i);
   });
-  // Dots, dashes and crossbars can end up alone: fold small "lines" into the
-  // nearest real line instead of treating them as something new to read.
-  const big = lines.filter((L) => L.maxY - L.minY > h * 0.6 || L.idx.length > 2);
-  if (big.length) {
-    for (const L of lines) {
-      if (big.includes(L)) continue;
-      let best = big[0];
-      for (const B of big) if (Math.abs(B.cy - L.cy) < Math.abs(best.cy - L.cy)) best = B;
-      if (Math.abs(best.cy - L.cy) < h * 2.2) { best.idx.push(...L.idx); L.idx = []; }
+  // Small leftovers (a crossbar, or a lone descender or ascender stroke like
+  // the tail of a y, whose centre is off the line) fold into the nearest real
+  // line when they are small or reach its core band.
+  const big = lines.filter((L) => L.idx.length > 2 || (L.maxY - L.minY > h * 0.6 && L.maxX - L.minX > h * 2.5));
+  for (const L of lines) {
+    if (!big.length || big.includes(L)) continue;
+    let best = big[0];
+    for (const B of big) if (Math.abs(B.cy - L.cy) < Math.abs(best.cy - L.cy)) best = B;
+    const reachesCore = L.minY < best.cy + h * 0.6 && L.maxY > best.cy - h * 0.6
+      && L.maxX > best.minX - h * 2 && L.minX < best.maxX + h * 2;
+    if (reachesCore || (L.maxY - L.minY <= h * 0.6 && Math.abs(best.cy - L.cy) < h * 2.2)) {
+      L.idx.forEach((i) => add(best, i));
+      L.idx = [];
     }
   }
+  // Marks join the line whose ink is right beside them (an i-dot goes with
+  // the stem under it), else the line whose centre is close.
+  boxes.forEach((b, i) => {
+    if (!isMark(b)) return;
+    let best = null, bestD = h * 2.2;
+    for (const L of lines) {
+      if (!L.idx.length) continue;
+      let d = Math.abs(b.cy - L.cy) + h;
+      for (const j of L.idx) {
+        const o = boxes[j];
+        if (o.maxX > b.minX - h && o.minX < b.maxX + h) d = Math.min(d, Math.max(0, o.minY - b.cy, b.cy - o.maxY));
+      }
+      if (d < bestD) { best = L; bestD = d; }
+    }
+    if (best) add(best, i); else newLine(i);
+  });
   return lines.filter((L) => L.idx.length).sort((a, b) => a.cy - b.cy).map((L) => L.idx.sort((a, b) => a - b));
 }
 
