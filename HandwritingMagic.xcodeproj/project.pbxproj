@@ -10,6 +10,7 @@
 		A10000000000000000000101 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000201 /* MLXVLM */; };
 		A10000000000000000000102 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000202 /* MLXLMCommon */; };
 		A10000000000000000000103 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000203 /* Tokenizers */; };
+		A10000000000000000000104 /* MLKitDigitalInkRecognition in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000204 /* MLKitDigitalInkRecognition */; };
 		A10000000000000000000111 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000211 /* MLXVLM */; };
 		A10000000000000000000112 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000212 /* MLXLMCommon */; };
 		A10000000000000000000113 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000213 /* Tokenizers */; };
@@ -60,6 +61,7 @@
 				A10000000000000000000101 /* MLXVLM in Frameworks */,
 				A10000000000000000000102 /* MLXLMCommon in Frameworks */,
 				A10000000000000000000103 /* Tokenizers in Frameworks */,
+				A10000000000000000000104 /* MLKitDigitalInkRecognition in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -121,6 +123,7 @@
 				A10000000000000000000201 /* MLXVLM */,
 				A10000000000000000000202 /* MLXLMCommon */,
 				A10000000000000000000203 /* Tokenizers */,
+				A10000000000000000000204 /* MLKitDigitalInkRecognition */,
 			);
 			productName = HandwritingMagic;
 			productReference = A10000000000000000000301 /* HandwritingMagic.app */;
@@ -182,6 +185,7 @@
 			packageReferences = (
 				A10000000000000000000A01 /* XCLocalSwiftPackageReference "../Files/App Work/dependencies/mlx-swift-lm" */,
 				A10000000000000000000A02 /* XCLocalSwiftPackageReference "../Files/App Work/dependencies/swift-transformers" */,
+				A10000000000000000000A03 /* XCRemoteSwiftPackageReference "google-mlkit-swiftpm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A10000000000000000000002 /* Products */;
@@ -301,6 +305,11 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-all_load",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.RytechLabsLLC.HandwritingMagic;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -336,6 +345,11 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-all_load",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.RytechLabsLLC.HandwritingMagic;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -414,6 +428,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		A10000000000000000000A03 /* XCRemoteSwiftPackageReference "google-mlkit-swiftpm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/d-date/google-mlkit-swiftpm";
+			requirement = {
+				kind = exactVersion;
+				version = 9.0.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		A10000000000000000000201 /* MLXVLM */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -429,6 +454,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000A02 /* XCLocalSwiftPackageReference "../Files/App Work/dependencies/swift-transformers" */;
 			productName = Tokenizers;
+		};
+		A10000000000000000000204 /* MLKitDigitalInkRecognition */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000A03 /* XCRemoteSwiftPackageReference "google-mlkit-swiftpm" */;
+			productName = MLKitDigitalInkRecognition;
 		};
 		A10000000000000000000211 /* MLXVLM */ = {
 			isa = XCSwiftPackageProductDependency;

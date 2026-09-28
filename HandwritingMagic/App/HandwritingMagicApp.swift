@@ -5,7 +5,7 @@ import SwiftUI
 @main
 struct HandwritingMagicApp: App {
     init() {
-        // loads in the background; the page works in Tidy mode meanwhile
+        // loads in the background; you can write meanwhile
         Task.detached(priority: .userInitiated) { await MagicEngine.shared.load() }
     }
 

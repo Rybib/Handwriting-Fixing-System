@@ -9,6 +9,13 @@ import ImageIO
 // usage: MagicCheck <evalset dir> [out dir]
 //   make the eval set in the Mac repo: .venv/bin/python tests/make_evalset.py /tmp/evalset
 //   each case is NN.json: {"strokes": [[[x, y], ...], ...], "written": ..., "intended": ...}
+//
+// MagicCheck --readers <model dir> ...   compares reading models instead (ReaderBench.swift)
+
+if CommandLine.arguments.dropFirst().first == "--readers" {
+    await ReaderBench.run(Array(CommandLine.arguments.dropFirst(2)))
+    exit(0)
+}
 
 let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
 let args = CommandLine.arguments

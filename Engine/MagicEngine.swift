@@ -9,7 +9,8 @@ import UIKit
 /// The whole Magic pipeline, the Swift twin of the Mac demo's server
 /// (`server/app.py`): it answers the page's `/api/status` and `/api/rewrite`.
 ///
-///   read the line (Qwen3-VL-2B, with Vision's reading as a second opinion)
+///   read the line: ML Kit reads the pen strokes literally, then Qwen3-VL-2B
+///   looks at the ink too and works out what was meant (spelling, their/there)
 ///   -> write what was meant, in the user's style AND a clean built-in style
 ///   -> Vision proofreads the candidates; the user's style wins if it reads
 ///      back perfectly, else whichever reads best
@@ -34,6 +35,10 @@ final class MagicEngine: @unchecked Sendable {
 
     private var synth: HandwritingSynth?
     private var reader: HandwritingReader?
+    #if canImport(MLKitDigitalInkRecognition)
+    private var inkReader: InkReader?
+    #endif
+    private var literalSource = "Apple Vision"
     private var proofreads = false
     /// One rewrite at a time: they share the CPU and GPU.
     private let queue = AsyncQueue()
@@ -42,7 +47,7 @@ final class MagicEngine: @unchecked Sendable {
 
     // MARK: - loading
 
-    /// Loads everything in the background; the page works in Tidy mode meanwhile.
+    /// Loads everything in the background; you can write meanwhile.
     /// nil folders: the app's own (hand_synth.bin/json, Qwen3VLModel.bundle).
     func load(synthDirectory: URL? = nil, modelDirectory: URL? = nil) async {
         update { $0.phase = "Getting the handwriting synthesiser" }
@@ -56,6 +61,15 @@ final class MagicEngine: @unchecked Sendable {
             update { $0.error = "synthesis model failed: \(error.localizedDescription)" }
         }
         proofreads = VisionOCR.works()
+        #if canImport(MLKitDigitalInkRecognition)
+        update { $0.phase = "Getting Google's handwriting recognizer (20 MB, once)" }
+        do {
+            inkReader = try await InkReader.load()
+            literalSource = "ML Kit"
+        } catch {
+            print("[models] ML Kit unavailable, reading with Vision: \(error)")
+        }
+        #endif
         reader = await loadReader(modelDirectory ?? Bundle.main.url(forResource: "Qwen3VLModel", withExtension: "bundle"))
         update {
             $0.reader = self.reader?.description
@@ -65,12 +79,13 @@ final class MagicEngine: @unchecked Sendable {
     }
 
     private func loadReader(_ modelDirectory: URL?) async -> HandwritingReader? {
+        let canRead = proofreads || literalSource != "Apple Vision"
         #if targetEnvironment(simulator)
-        // MLX needs a real GPU: the Simulator reads with Vision alone
-        return proofreads ? VisionReader(description: "Apple Vision (Simulator: no spelling fixes)") : nil
+        // MLX needs a real GPU: the Simulator has no AI model
+        return canRead ? SpellcheckReader(description: "\(literalSource) + spellchecker (Simulator: no AI fixes)") : nil
         #else
-        let fallback = proofreads
-            ? VisionReader(description: "Apple Vision only, no spelling fixes (Qwen3-VL-2B isn't in the app: run scripts/get_model.sh)")
+        let fallback = canRead
+            ? SpellcheckReader(description: "\(literalSource) + spellchecker, no AI fixes (Qwen3-VL-2B isn't in the app: run scripts/get_model.sh)")
             : nil
         guard let dir = modelDirectory, FileManager.default.fileExists(atPath: dir.appendingPathComponent("model.safetensors").path) else {
             if fallback == nil { update { $0.error = "Qwen3-VL-2B isn't in the app (run scripts/get_model.sh)" } }
@@ -80,15 +95,14 @@ final class MagicEngine: @unchecked Sendable {
             update { $0.phase = "Loading the handwriting reader into memory" }
             // MLX recycles freed GPU buffers up to this size; keep it small next to 1.7 GB of weights
             MLX.Memory.cacheLimit = 128 * 1024 * 1024
-            let qwen = try await QwenReader(modelDirectory: dir, description: "Qwen3-VL-2B on this \(Self.deviceName)")
-            qwen.useOCRHint = proofreads
+            let qwen = try await QwenReader(modelDirectory: dir, description: "\(literalSource) + Qwen3-VL-2B on this \(Self.deviceName)")
             update { $0.phase = "Warming up the handwriting reader" }
             let blank = Ink.render([[SIMD2(0, 0), SIMD2(40, 0)]])!
             _ = try await qwen.generate("Say OK.", image: blank, maxTokens: 4)
             return qwen
         } catch {
             update { $0.error = "the reader didn't load: \(error.localizedDescription)" }
-            return fallback == nil ? nil : VisionReader(description: "Apple Vision only, no spelling fixes (Qwen3-VL-2B failed to load)")
+            return fallback == nil ? nil : SpellcheckReader(description: "\(literalSource) + spellchecker, no AI fixes (Qwen3-VL-2B failed to load)")
         }
         #endif
     }
@@ -109,7 +123,7 @@ final class MagicEngine: @unchecked Sendable {
     }
 
     /// POST /api/rewrite, same request and reply as the Mac server:
-    ///   {"lines": [{"strokes": [[[x, y], ...], ...], "prime": [...]}], "style": "mine" | 0...12,
+    ///   {"lines": [{"strokes": [[[x, y], ...], ...], "times": [[s, ...], ...], "prime": [...]}], "style": "mine" | 0...12,
     ///    "bias": 2.28, "fix_spelling": true, "candidates": 8}
     ///   -> {"lines": [{"written", "meant", "text", "corrections", "strokes", "style_used", "timing"}]}
     /// Returned strokes: left edge x 0, baseline y 0, x-height 1, y down.
@@ -138,7 +152,8 @@ final class MagicEngine: @unchecked Sendable {
             } else {
                 guard let reader else { throw Failure(status.error ?? "handwriting reader still loading") }
                 guard let image = Ink.render(strokes) else { throw Failure("no ink") }
-                (written, meant) = try await reader.read(image)
+                let literal = await literalReading(strokes, times: line["times"] as? [[Double]], image: image)
+                (written, meant) = try await reader.read(image, literal: literal)
             }
             let tRead = Date().timeIntervalSince(t0)
             let target = TextTools.sanitize(fix ? meant : written)
@@ -199,6 +214,15 @@ final class MagicEngine: @unchecked Sendable {
             print("[rewrite] read \(String(format: "%.1f", tRead))s synth \(String(format: "%.1f", tSynth))s  \(written) -> \(target)")
         }
         return ["lines": out]
+    }
+
+    /// What is literally written: ML Kit reads the pen strokes (and their
+    /// timing); without it, Vision reads a picture of them.
+    private func literalReading(_ strokes: [Stroke], times: [[Double]]?, image: CGImage) async -> String? {
+        #if canImport(MLKitDigitalInkRecognition)
+        if let inkReader, let best = await inkReader.read(strokes, times: times).first { return best }
+        #endif
+        return proofreads ? VisionOCR.read(image) : nil
     }
 
     /// The candidate that reads back best (ties: the better attention score).

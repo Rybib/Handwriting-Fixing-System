@@ -6,12 +6,13 @@ import MLXLMCommon
 import MLXVLM
 import Vision
 
-/// Reads one line of handwriting: what is literally written, and what the
-/// writer meant. Ported from the Mac demo (`server/recognize.py`).
+/// Works out what one line of handwriting says: what is literally written,
+/// and what the writer meant. Ported from the Mac demo (`server/recognize.py`).
+/// `literal` is a stroke recogniser's (ML Kit) or OCR's reading of the line.
 protocol HandwritingReader: Sendable {
     /// Shown in the page's status line.
     var description: String { get }
-    func read(_ image: CGImage) async throws -> (written: String, meant: String)
+    func read(_ image: CGImage, literal: String?) async throws -> (written: String, meant: String)
 }
 
 /// Apple's on-device text recogniser (Vision). It reads exactly what is on
@@ -44,20 +45,23 @@ enum VisionOCR {
     }
 }
 
-/// Vision on its own: reads, but can't fix spelling. Used when the Qwen model
-/// isn't available (the Simulator, or the model wasn't copied into the app).
-struct VisionReader: HandwritingReader {
+/// No AI model: the literal reading, with the system spellchecker for what
+/// was meant. Used where Qwen can't run (the Simulator, or the model wasn't
+/// copied into the app). It fixes "freind", but not "their" for "there".
+struct SpellcheckReader: HandwritingReader {
     let description: String
 
-    func read(_ image: CGImage) async throws -> (written: String, meant: String) {
-        let text = VisionOCR.read(image) ?? ""
-        return (text, text)
+    func read(_ image: CGImage, literal: String?) async throws -> (written: String, meant: String) {
+        let text = literal ?? VisionOCR.read(image) ?? ""
+        return (text, SpellFixer.fix(text))
     }
 }
 
 /// Qwen3-VL-2B-Instruct (4-bit MLX), the same model and prompt as the Mac demo.
 /// One pass returns both a literal reading and the intended sentence, because
-/// it sees the pixels and knows English ("wether" -> "weather").
+/// it sees the pixels and knows English ("wether" -> "weather"). The literal
+/// reading goes in as a hint (with the right one it gets 23 of the 24 eval
+/// lines, against 19 with Vision's).
 final class QwenReader: HandwritingReader, @unchecked Sendable {
     static let prompt =
         "This image is one line of handwriting by a person with dyslexia; it may be messy and misspelled. "
@@ -66,8 +70,8 @@ final class QwenReader: HandwritingReader, @unchecked Sendable {
         + "MEANT: <the same words spelled correctly. Fix misspellings and wrong homophones (their/there, to/too, "
         + "your/you're) from context. Keep the same words in the same order; do not add or remove words>"
 
-    /// Vision's literal reading, put BEFORE the instructions (after them, the
-    /// model echoed it back and took twice as long). It took 2B from 14 to 19
+    /// The literal reading, put BEFORE the instructions (after them, the model
+    /// echoed it back and took twice as long). Vision's took 2B from 14 to 19
     /// of the 24 eval lines on the Mac.
     static func ocrHint(_ ocr: String) -> String {
         "An OCR engine read this line as \"\(ocr)\", but it is often wrong about single letters, so trust the image.\n"
@@ -75,19 +79,17 @@ final class QwenReader: HandwritingReader, @unchecked Sendable {
 
     let description: String
     private let container: ModelContainer
-    /// Whether to ask Vision for a second opinion first.
-    var useOCRHint = true
 
     init(modelDirectory: URL, description: String) async throws {
         container = try await VLMModelFactory.shared.loadContainer(from: modelDirectory, using: TransformersTokenizerLoader())
         self.description = description
     }
 
-    func read(_ image: CGImage) async throws -> (written: String, meant: String) {
-        let ocr = useOCRHint ? (VisionOCR.read(image) ?? "") : ""
+    func read(_ image: CGImage, literal: String?) async throws -> (written: String, meant: String) {
+        let ocr = literal ?? ""
         let prompt = (ocr.isEmpty ? "" : Self.ocrHint(ocr)) + Self.prompt
         let read = Self.parse(try await generate(prompt, image: image))
-        // an empty or wordless reply would leave the line untouched; Vision's reading is better than nothing
+        // an empty or wordless reply would leave the line untouched; the literal reading is better than nothing
         let hasWords = { (s: String) in s.rangeOfCharacter(from: .alphanumerics) != nil }
         if !hasWords(read.meant), hasWords(ocr) { return (ocr, ocr) }
         return read
@@ -95,8 +97,9 @@ final class QwenReader: HandwritingReader, @unchecked Sendable {
 
     func generate(_ prompt: String, image: CGImage?, maxTokens: Int = 96) async throws -> String {
         // greedy, like the Mac demo; no resize: Qwen's processor keeps the line's aspect ratio
+        // enable_thinking: Qwen3.5 would otherwise reason out loud first (other templates ignore it)
         let session = ChatSession(container, generateParameters: GenerateParameters(maxTokens: maxTokens, temperature: 0),
-                                  processing: UserInput.Processing(resize: nil))
+                                  processing: UserInput.Processing(resize: nil), additionalContext: ["enable_thinking": false])
         let reply = try await session.respond(to: prompt, images: image.map { [.ciImage(CIImage(cgImage: $0))] } ?? [],
                                               videos: [])
         await session.clear()
@@ -106,19 +109,23 @@ final class QwenReader: HandwritingReader, @unchecked Sendable {
     /// "WRITTEN: ... / MEANT: ..." -> (written, meant), tolerant of a sloppy reply.
     static func parse(_ reply: String) -> (written: String, meant: String) {
         var written: String?, meant: String?
-        for line in reply.split(separator: "\n", omittingEmptySubsequences: false) {
-            let s = line.trimmingCharacters(in: .whitespaces)
-            guard let colon = s.firstIndex(of: ":") else { continue }
-            let key = s[..<colon].trimmingCharacters(in: .whitespaces).uppercased()
-            let value = s[s.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            if key == "WRITTEN" { written = value } else if key == "MEANT" { meant = value }
+        let reply = reply.replacingOccurrences(of: #"(?s)<think>.*?</think>"#, with: "", options: .regularExpression)
+        // "WRITTEN: ... MEANT: ...", on one line or two, maybe as "**WRITTEN**:" (markdown)
+        let label = try! NSRegularExpression(pattern: #"\**\b(WRITTEN|MEANT)\b\**\s*:\s*"#, options: .caseInsensitive)
+        let ns = reply as NSString
+        let found = label.matches(in: reply, range: NSRange(location: 0, length: ns.length))
+        for (i, m) in found.enumerated() {
+            let end = i + 1 < found.count ? found[i + 1].range.location : ns.length
+            let value = ns.substring(with: NSRange(location: m.range.upperBound, length: end - m.range.upperBound))
+                .split(separator: "\n").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+            if ns.substring(with: m.range(at: 1)).uppercased() == "WRITTEN" { written = value } else { meant = value }
         }
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         var w = written ?? trimmed.split(separator: "\n").first.map(String.init) ?? ""
         let m = meant ?? w
         // the small model sometimes letter-spaces its literal reading ("h e l l o")
         if w.range(of: #"^(\S )+\S$"#, options: .regularExpression) != nil { w = m }
-        let strip = CharacterSet(charactersIn: " \"")
+        let strip = CharacterSet(charactersIn: " \"*")
         return (w.trimmingCharacters(in: strip), m.trimmingCharacters(in: strip))
     }
 }

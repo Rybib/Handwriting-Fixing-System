@@ -3,7 +3,8 @@
 The Mac demo (`~/Desktop/HandwritingMagic`), running on a touchscreen. Write with
 your finger or an Apple Pencil, then tap **✨ Magic**: everything you wrote
 dissolves into sparkles and comes back neat, spelled correctly, and in your handwriting.
-Everything runs on the device; it works in Airplane Mode.
+Everything runs on the device. The first launch needs the internet once, to
+fetch Google's 20 MB handwriting recognizer; after that it works in Airplane Mode.
 
 This is a playground for trying the idea on a real screen before any of it
 goes into Rytability.
@@ -20,8 +21,8 @@ goes into Rytability.
    You can write while it loads.
 
 The Simulator runs the app too, but MLX needs a real GPU, so there it reads
-with Apple Vision only (no spelling fixes) and is slower. Use it for layout;
-use a device for the real thing.
+with ML Kit and fixes spelling with the system spellchecker only (so "their"
+stays "their"), and it's slower. Use it for layout; use a device for the real thing.
 
 The page and its controls are the Mac demo's (✨ Magic, Neatness, the 13 named
 styles, Fix spelling, 👁 hold to see what you wrote, ↶ undo, ✕ clear). Nothing
@@ -39,12 +40,21 @@ HandwritingMagic/            the app
   Qwen3VLModel.bundle/       the reader: Qwen3-VL-2B-Instruct, 4-bit MLX (not in git)
 Engine/                      the pipeline, in Swift (shared with MagicCheck)
   MagicEngine.swift          read -> write in your style + a clean style -> proofread
-  Readers.swift              Qwen3-VL-2B via MLX, and Apple Vision
+  InkReader.swift            Google ML Kit Digital Ink: reads the pen strokes literally
+  Readers.swift              Qwen3-VL-2B via MLX (what was meant), Apple Vision
+  SpellFixer.swift           the system spellchecker, for when there's no AI model
   HandwritingSynth.swift     Graves handwriting synthesis on Accelerate
   Ink.swift, TextTools.swift ink geometry, spelling diff, text helpers
 MagicCheck/                  a Mac command-line tool: runs Engine/ on test ink
 scripts/                     get_model.sh, sync_web.sh, export_synth.py
 ```
+
+Reading a line takes two steps. **ML Kit Digital Ink Recognition** reads the
+pen strokes (where the pen went, in what order) and returns what is literally
+written, misspellings and all, in ~20 ms. **Qwen3-VL-2B** then looks at the
+ink with that reading as a hint and works out what was meant ("their
+tomorow" -> "there tomorrow"). Without ML Kit, Apple Vision reads a picture of
+the ink instead.
 
 The page talks to `magic://app/api/rewrite` exactly as it talks to the Python
 server on the Mac, so both run the same `web/`. The Swift engine is a port of
@@ -52,7 +62,13 @@ server on the Mac, so both run the same `web/`. The Swift engine is a port of
 or the clean *Tall narrow print* style, whichever reads back better" rule, 8
 candidates of each, proofread by Vision.
 
-Packages come from Rytability's vendored copies in
+ML Kit comes from [d-date/google-mlkit-swiftpm](https://github.com/d-date/google-mlkit-swiftpm)
+9.0.2, a community Swift Package of Google's ML Kit binaries (Google only
+publishes it for CocoaPods). It needs `-ObjC -all_load` in Other Linker Flags
+and `HandwritingMagic/MLKitDigitalInkRecognition_resource.bundle` (the model
+download manifest; without it the download silently never starts).
+
+The MLX packages come from Rytability's vendored copies in
 `~/Desktop/Files/App Work/dependencies` (`mlx-swift-lm` and `swift-transformers`,
 local references), so the code builds against exactly what Rytability ships.
 The tokenizer loader is written out by hand, so no Swift macro has to be
@@ -86,12 +102,50 @@ about 0.3 s on the Mac. The iOS Simulator is ~3 s a line; it has no GPU for
 MLX and runs Vision on the CPU, so real devices should be quicker, but that
 still needs measuring.
 
+## Which model reads best? (28 Sep 2026)
+
+`MagicCheck --readers <model folders>` runs any MLX vision model through the
+app's reader code on the 24 eval lines (12 eval ink, 12 drawn with a mouse in
+the browser). On the M5 Mac, with Vision's reading as the hint:
+
+| Model | Right | Time a line | Size |
+|---|---|---|---|
+| **Qwen3-VL-2B 4-bit (the app's)** | 19/24 | 0.45 s | 1.8 GB |
+| Qwen3-VL-2B 8-bit | 19/24 | 0.63 s | 2.7 GB |
+| Qwen3.5-2B 4-bit | 20/24 | 0.84 s | 1.75 GB |
+| Qwen3-VL-4B 4-bit | 19/24 | 0.78 s | 3.1 GB |
+| Gemma 3 4B QAT (Rytability's) | 20/24 | 2.2 s | 3.0 GB |
+| LFM2.5-VL-1.6B | 13/24 | 0.89 s | 1.5 GB |
+| Qwen3.5-0.8B | 12/24 | 0.59 s | 0.65 GB |
+
+(Gemma 4 E2B's MLX build doesn't load in this mlx-swift-lm.) No model of the
+same size reads clearly better. What made the difference was the hint: given
+the *correct* literal reading, Qwen3-VL-2B gets **23/24** and Qwen3.5-2B 24/24.
+So the weak step was the literal reading, which is why ML Kit now does it.
+
+On the 12 lines whose strokes we have, ML Kit read 8 exactly (Vision's
+readings were like "frecieue my freind"), in 10-30 ms. What was meant, from
+ML Kit's reading:
+
+| | Right | Time |
+|---|---|---|
+| Qwen3-VL-2B, looking at the ink too (the app) | 10/12 | 0.40 s |
+| Qwen3-VL-2B, text only | 9/12 | 0.14 s |
+| Gemma 3 4B (Rytability's), text only | 9/12 | 0.39 s |
+| Qwen3.5-0.8B, text only | 6/12 | 0.17 s |
+| System spellchecker, no AI | ~4/12 | 0.02 s |
+
+The two it can't get are the same for every setup: a stray scribble in the
+eval ink, and a near-illegible "thank you for comming to my party". This ink
+is generated, so real handwriting (which ML Kit is trained on) should favour
+ML Kit more.
+
 ## Before merging into Rytability
+
+- **No second model needed:** ML Kit (20 MB) reads, and Rytability's Gemma,
+  text only, works out what was meant: 9/12 above, one behind Qwen with the ink.
 
 - Measure it on the devices: time per line and memory. The reader needs about
   2 GB; the app asks for the increased memory limit, as Rytability does.
-- Rytability's model is Gemma, bundled the same way (`GemmaMLXModel.bundle`).
-  Two models in one app is 4+ GB, so decide whether Gemma can do the reading,
-  or whether the reader is a downloadable add-on.
 - The page would become native SwiftUI + PencilKit. The ink smoothing and Tidy
   are in `Web.bundle/js`; Engine/ can be used as it is.

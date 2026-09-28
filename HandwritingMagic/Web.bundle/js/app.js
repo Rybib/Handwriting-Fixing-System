@@ -300,8 +300,11 @@ async function applyMagic(group) {
   group.paths.forEach((p) => { p.shimmer = true; p.bbox = null; });
   requestRender();
   const xy = (pts) => pts.map((q) => [Math.round(q.x * 10) / 10, Math.round(q.y * 10) / 10]);
+  // when each point was drawn (s): a stroke recogniser (ML Kit, on the phone) reads the pen's movement
+  const t0 = Math.min(...group.paths.map((p) => p.orig[0]?.t ?? Infinity));
+  const times = group.paths.map((p) => p.orig.map((q) => Math.round(((q.t ?? t0) - t0) * 1000) / 1000));
   const body = {
-    lines: [{ strokes: group.paths.map((p) => xy(p.orig)), prime: group.tidy.strokes.map(xy) }],
+    lines: [{ strokes: group.paths.map((p) => xy(p.orig)), times, prime: group.tidy.strokes.map(xy) }],
     style: settings.style, bias: 0.3 + (settings.neatness / 100) * 2.2,
     fix_spelling: settings.spelling, candidates: 8,   // each one proofread; 8 costs ~0.6 s on an M5
   };
