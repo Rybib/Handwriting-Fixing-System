@@ -1,8 +1,8 @@
 # Handwriting Magic for iPhone and iPad
 
 The Mac demo (`~/Desktop/HandwritingMagic`), running on a touchscreen. Write with
-your finger or an Apple Pencil. When you pause, your scrawl dissolves into
-sparkles and comes back neat, spelled correctly, and in your handwriting.
+your finger or an Apple Pencil, then tap **✨ Magic**: everything you wrote
+dissolves into sparkles and comes back neat, spelled correctly, and in your handwriting.
 Everything runs on the device; it works in Airplane Mode.
 
 This is a playground for trying the idea on a real screen before any of it
@@ -17,14 +17,15 @@ goes into Rytability.
 3. The first install copies the 1.7 GB reader to the device, so it takes a
    minute. At launch the status (bottom right) says *Loading the handwriting
    reader…* for a few seconds, then turns green: *Ready · Qwen3-VL-2B on this iPad*.
-   Tidy works straight away.
+   You can write while it loads.
 
 The Simulator runs the app too, but MLX needs a real GPU, so there it reads
 with Apple Vision only (no spelling fixes) and is slower. Use it for layout;
 use a device for the real thing.
 
-The page and its controls are the Mac demo's (Magic / Tidy / Off, Neatness,
-the 13 named styles, Fix spelling, 👁 hold to see what you wrote, ↶ undo, ✕ clear).
+The page and its controls are the Mac demo's (✨ Magic, Neatness, the 13 named
+styles, Fix spelling, 👁 hold to see what you wrote, ↶ undo, ✕ clear). Nothing
+is rewritten until you tap Magic, so it never grabs a sentence mid-thought.
 After the first Pencil stroke, fingers stop drawing (palm rejection).
 
 ## How it's put together

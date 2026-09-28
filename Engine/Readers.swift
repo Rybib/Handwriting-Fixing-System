@@ -86,7 +86,11 @@ final class QwenReader: HandwritingReader, @unchecked Sendable {
     func read(_ image: CGImage) async throws -> (written: String, meant: String) {
         let ocr = useOCRHint ? (VisionOCR.read(image) ?? "") : ""
         let prompt = (ocr.isEmpty ? "" : Self.ocrHint(ocr)) + Self.prompt
-        return Self.parse(try await generate(prompt, image: image))
+        let read = Self.parse(try await generate(prompt, image: image))
+        // an empty or wordless reply would leave the line untouched; Vision's reading is better than nothing
+        let hasWords = { (s: String) in s.rangeOfCharacter(from: .alphanumerics) != nil }
+        if !hasWords(read.meant), hasWords(ocr) { return (ocr, ocr) }
+        return read
     }
 
     func generate(_ prompt: String, image: CGImage?, maxTokens: Int = 96) async throws -> String {
