@@ -4,8 +4,8 @@ scipy>=1.10
 pillow>=10.0
 
 # Handwriting reader (Qwen3-VL, runs locally; Apple Silicon GPU via MPS)
-torch>=2.4
-torchvision>=0.19
+torch>=2.2
+torchvision>=0.17
 transformers>=4.57,<6
 accelerate>=0.33
 

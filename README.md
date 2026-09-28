@@ -19,11 +19,18 @@ cd Handwriting-Fixing-System
 ./run.sh
 ```
 
+After that, just double-click **Launch Handwriting Magic.command** in the folder.
+If anything goes wrong, the launcher saves everything it printed to
+`logs/last-run.log`, and `./run.sh --reset` rebuilds the Python environment
+from scratch. If the AI packages can't be installed, it still starts, in
+Tidy-only mode.
+
 The first run sets up a Python environment, installs PyTorch and Transformers
 (about 1 GB), then downloads the models (about 4.5 GB for the handwriting reader
 and 43 MB for the handwriting synthesiser). After that, `./run.sh` opens
-`http://localhost:8765` in a few seconds. You need Python 3.10 or newer. If
-`run.sh` can't find it, run `brew install python@3.12`.
+`http://localhost:8765` in a few seconds. It needs Python 3.10 or newer. If it
+can't find one, it installs [uv](https://docs.astral.sh/uv/), which fetches
+Python for you (no admin rights needed).
 
 **Test with a real Apple Pencil:** run `./run.sh --lan`, then open the printed
 `http://<your-mac-ip>:8765` address in Safari on an iPad on the same Wi-Fi.

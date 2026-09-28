@@ -241,10 +241,23 @@ def main():
     ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args()
 
-    threading.Thread(target=load_models, args=(args.reader,), daemon=True).start()
-    host = "0.0.0.0" if args.lan else "127.0.0.1"
-    httpd = ThreadingHTTPServer((host, args.port), Handler)
     url = f"http://localhost:{args.port}"
+    host = "0.0.0.0" if args.lan else "127.0.0.1"
+    try:
+        httpd = ThreadingHTTPServer((host, args.port), Handler)
+    except OSError:
+        # Most likely the demo is already running (launcher double-clicked twice).
+        try:
+            import urllib.request
+            urllib.request.urlopen(f"{url}/api/status", timeout=2).read()
+            print(f"Handwriting Magic is already running at {url} - opening it.")
+            if not args.no_browser:
+                webbrowser.open(url)
+            return
+        except Exception:  # noqa: BLE001
+            print(f"Port {args.port} is in use by another program. Try:  ./run.sh --port 8766")
+            sys.exit(1)
+    threading.Thread(target=load_models, args=(args.reader,), daemon=True).start()
     print(f"\n  Rytability handwriting demo: {url}")
     if args.lan and lan_ip():
         print(f"  On your iPad (same Wi-Fi):   http://{lan_ip()}:{args.port}")
