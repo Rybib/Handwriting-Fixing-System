@@ -16,7 +16,7 @@ const percentile = (a, q) => {
   const lo = Math.floor(i), hi = Math.ceil(i);
   return s[lo] + (s[hi] - s[lo]) * (i - lo);
 };
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+export const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 export function bbox(pts) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;

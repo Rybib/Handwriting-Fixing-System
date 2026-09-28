@@ -1,5 +1,5 @@
 import { StrokeModeler } from "./inkmodeler.js";
-import { bbox, coreMetrics, groupLines, splitWords, tidyLine } from "./tidy.js";
+import { bbox, clamp, coreMetrics, groupLines, splitWords, tidyLine } from "./tidy.js";
 
 // ---------------------------------------------------------------------------
 // setup
@@ -15,7 +15,7 @@ const RULE_GAP = 72, RULE_TOP = 150;
 
 const settings = {
   mode: "magic",        // magic | tidy | off
-  neatness: 60,
+  neatness: 90,         // measured: cleaner fallback style, no worse copies of yours (tests/eval_pipeline.py)
   style: "mine",
   spelling: true,
   autoDelay: 1100,      // ms of stillness before the magic happens
@@ -271,7 +271,7 @@ function processPending() {
     const canMagic = settings.mode === "magic" && serverInfo.synth && !serverInfo.loading && serverInfo.reader;
     if (!canMagic) {
       if (settings.mode === "magic") {
-        card(serverInfo.loading ? "The handwriting reader is still loading, so I just tidied this. Magic will kick in once it's ready."
+        card(serverInfo.loading ? `Magic isn't ready yet (${esc(serverInfo.phase || "loading")}), so I just tidied this. It will kick in once the status turns green.`
           : `Handwriting reader unavailable (${serverInfo.error || "no reader"}), so I tidied instead.`, 5000, "err");
       }
       applyTidy(group);
@@ -305,7 +305,7 @@ async function applyMagic(group) {
   const body = {
     lines: [{ strokes: group.paths.map((p) => xy(p.orig)), prime: group.tidy.strokes.map(xy) }],
     style: settings.style, bias: 0.3 + (settings.neatness / 100) * 2.2,
-    fix_spelling: settings.spelling, candidates: 3,
+    fix_spelling: settings.spelling, candidates: 8,   // each one proofread; 8 costs ~0.6 s on an M5
   };
   let res;
   try {
@@ -326,7 +326,7 @@ async function applyMagic(group) {
     group.paths.forEach((p) => (p.state = "done"));
     return;
   }
-  const placed = placeSynth(line.strokes, group.tidy.metrics, line);
+  const placed = placeSynth(line.strokes, group, line);
   revealMagic(group, placed);
   showResultCard(line);
   history.push({ type: "fix", group });
@@ -334,21 +334,24 @@ async function applyMagic(group) {
 
 // Scale/position the normalised synthesised ink onto the page, wrapping words
 // onto new lines when they would run off the right edge.
-function placeSynth(strokes, metrics, line) {
+function placeSynth(strokes, group, line) {
+  const metrics = group.tidy.metrics;
   const S = strokes.map((s) => s.map(([x, y]) => ({ x, y })));
   const m = coreMetrics(S.flat(), 1);
-  // Size: match the x-height, and also the average width per character. x-height
-  // alone is measured differently across writing styles; blending in the width
-  // keeps the rewrite about as big as what was written.
-  const kCore = metrics.core / m.core;
-  const synthW = bbox(S.flat()).w, userW = metrics.right - metrics.x0;
-  const nW = Math.max(1, (line.written || "").length), nT = Math.max(1, (line.text || "").length);
-  const kWidth = userW / nW / (synthW / nT || 1);
-  const k = Math.sqrt(kCore * Math.min(Math.max(kWidth, kCore * 0.6), kCore * 1.6));
+  // Size: give the rewrite the x-height of what was written. Measured directly,
+  // the x-height of messy ink is often off by a quarter (a wavy baseline smears
+  // it), so it is averaged with an estimate from the width per letter: in
+  // handwriting a letter plus its share of the spaces is ~1.25 x-heights wide.
+  // (Matching the width alone would blow up narrow styles like Style 10.)
+  const ink = group.paths.flatMap((p) => p.orig);
+  const inkCore = coreMetrics(ink).core;
+  const perLetter = bbox(ink).w / Math.max(1, (line.written || line.text || "").length);
+  const xh = clamp(Math.sqrt(inkCore * perLetter / 1.25), inkCore * 0.7, inkCore * 1.4);
+  const k = xh / m.core;
   const scaled = S.map((s) => s.map((p) => ({ x: p.x * k, y: (p.y - m.base) * k })));
-  const words = splitWords(scaled, 0.5 * metrics.core);
+  const words = splitWords(scaled, 0.5 * xh);
   const right = W - 40;
-  const lineH = Math.max(RULE_GAP, metrics.core * 3.4);
+  const lineH = Math.max(RULE_GAP, xh * 3.4);
   let cursorX = metrics.x0, y0 = metrics.baseline, prevMax = null, out = [];
   const minX0 = Math.min(...scaled.flat().map((p) => p.x));
   words.forEach((idx, wi) => {
@@ -361,7 +364,7 @@ function placeSynth(strokes, metrics, line) {
     cursorX = b.maxX + dx; prevMax = b.maxX;
   });
   // keep the pen order (left to right, roughly as written)
-  const widthScale = Math.min(1.5, Math.max(0.8, metrics.core / 22));
+  const widthScale = clamp(xh / 22, 0.8, 1.5);
   return out.map((o) => {
     const n = o.pts.length;
     o.pts.forEach((p, i) => {
@@ -415,11 +418,14 @@ function card(html, ttl = 6000, cls = "") {
 
 function showResultCard(line) {
   const fixes = (line.corrections || []).filter(([a, b]) => a.toLowerCase() !== b.toLowerCase());
+  // the server only keeps "my handwriting" when the copy reads back as well as a clean style
+  const note = settings.style === "mine" && line.style_used !== "mine"
+    ? `<div class="note">Your handwriting was hard to copy neatly here, so I used a clean style.</div>` : "";
   if (fixes.length) {
     const chips = fixes.map(([a, b]) => `<del>${esc(a || "∅")}</del> → <ins>${esc(b || "∅")}</ins>`).join("&nbsp;&nbsp; ");
-    card(`<span class="label">Fixed</span>${chips}`, 7000);
+    card(`<span class="label">Fixed</span>${chips}${note}`, 7000);
   } else {
-    card(`<span class="label">Read</span>${esc(line.text)} &nbsp;<span class="ok">✓</span>`, 5000);
+    card(`<span class="label">Read</span>${esc(line.text)} &nbsp;<span class="ok">✓</span>${note}`, 5000);
   }
 }
 

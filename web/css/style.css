@@ -58,6 +58,7 @@ button.icon:hover, button.icon.active { background: rgba(20, 30, 60, .07); }
 .card del { color: #c0392b; text-decoration-thickness: 2px; opacity: .8; }
 .card ins { text-decoration: none; font-weight: 700; background: linear-gradient(135deg, var(--imp-a), var(--imp-c)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .card .ok { color: var(--good); font-weight: 700; }
+.card .note { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
 .card.err { color: #b3261e; }
 @keyframes rise { from { opacity: 0; transform: translateY(12px) scale(.97); } to { opacity: 1; transform: none; } }
 @keyframes sink { to { opacity: 0; transform: translateY(8px); } }
